@@ -1,0 +1,91 @@
+contract_version: 1.0.0
+contract_id: SRC-PAY-001
+name: Synthetic payments and billing adjustments
+status: baseline_draft
+source_family: payments
+grain: One posted payment adjustment refund or write-off transaction
+description: Payer and patient payments plus synthetic billing-system and billing-spreadsheet financial adjustments.
+requirements:
+  - FR-ING-001
+  - FR-ING-004
+  - FR-DQ-001
+  - FR-DQ-002
+  - FR-WH-002
+  - FR-WH-007
+  - FR-ALT-005
+acceptance_criteria:
+  - AC-ING-001
+  - AC-ING-004
+  - AC-DQ-001
+  - AC-DQ-002
+  - AC-WH-002
+  - AC-WH-007
+  - AC-ALT-005
+synthetic_only: true
+fixture_profile:
+  baseline_rows_per_month: 140000
+  invalid_fixture_rate: 0.02
+  required_scenarios: [payer_payment, patient_payment, contractual_adjustment, write_off, refund, reversal, invalid_direction, billing_spreadsheet, orphan_transaction, overpayment]
+owners: {business: Revenue Cycle Finance, technical: ClaimsFlow Data Engineering}
+delivery:
+  format: csv
+  encoding: UTF-8
+  delimiter: comma
+  header: true
+  compression: none
+  schedule: hourly
+  expected_by_utc: "30 minutes after the hour"
+  late_after: PT2H
+  mode: incremental
+  file_pattern: "{source_system}_payments_adjustments_{extract_at_utc}_{sequence}.csv"
+  allowed_source_types: [clearinghouse, billing_system, billing_spreadsheet]
+keys:
+  natural_key: [source_system, payment_id]
+  source_record_id: [payment_id]
+relationships:
+  - {fields: [reverses_payment_source_system, reverses_payment_id], target: payments.source_system+payment_id, required: false, match: exact_key, cardinality: zero_or_one}
+  - {fields: [claim_source_system, claim_id, claim_submission_sequence], target: claims.source_system+claim_id+submission_sequence, required: true, match: exact_key, cardinality: exactly_one}
+  - {fields: [claim_source_system, claim_id, claim_submission_sequence, claim_line_number], target: claim-lines.source_system+claim_id+submission_sequence+line_number, required: false, match: exact_key, cardinality: zero_or_one}
+  - {fields: [remittance_source_system, remittance_id], target: remittances.source_system+remittance_id, required: false, match: exact_key, cardinality: zero_or_one}
+  - {fields: [payer_id], target: reference-data.payers.payer_id, required: false, match: effective_at, as_of_field: payment_date, cardinality: zero_or_one_effective}
+schema:
+  - {name: payment_id, type: STRING, required: true, nullable: false, description: Stable synthetic financial transaction identifier}
+  - {name: remittance_source_system, type: STRING, required: true, nullable: true, description: Source system from the linked remittance delivery envelope}
+  - {name: remittance_id, type: STRING, required: true, nullable: true, description: Parent payer remittance when applicable}
+  - {name: claim_source_system, type: STRING, required: true, nullable: false, description: Source system from the linked claim and claim-line delivery envelope}
+  - {name: claim_id, type: STRING, required: true, nullable: false, description: Target claim identifier}
+  - {name: claim_submission_sequence, type: INTEGER, required: true, nullable: false, description: Target claim submission sequence, minimum: 1}
+  - {name: claim_line_number, type: INTEGER, required: true, nullable: true, description: Target claim-line number when allocated at line grain, minimum: 1}
+  - {name: claim_line_id, type: STRING, required: true, nullable: true, description: Target claim-line identifier when allocated at line grain}
+  - {name: payer_id, type: STRING, required: true, nullable: true, description: Payer reference for payer-originated transactions}
+  - {name: transaction_type, type: STRING, required: true, nullable: false, description: Financial event type, allowed_values: [payer_payment, patient_payment, contractual_adjustment, write_off, refund, reversal]}
+  - {name: direction, type: STRING, required: true, nullable: false, description: Sign convention for amount, allowed_values: [credit, debit]}
+  - {name: amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Positive transaction magnitude in USD, minimum_exclusive: 0.00}
+  - {name: currency_code, type: STRING, required: true, nullable: false, description: ISO 4217 currency, allowed_values: [USD]}
+  - {name: payment_date, type: DATE, required: true, nullable: false, description: Business-effective transaction date}
+  - {name: posted_at, type: TIMESTAMP, required: true, nullable: false, description: Billing ledger posting instant}
+  - {name: adjustment_reason_code, type: STRING, required: true, nullable: true, description: Required reference for adjustment write-off refund or reversal}
+  - {name: reverses_payment_source_system, type: STRING, required: true, nullable: true, description: Source system from the original payment delivery envelope for refund or reversal}
+  - {name: reverses_payment_id, type: STRING, required: true, nullable: true, description: Original transaction identifier for refund or reversal}
+  - {name: posting_status, type: STRING, required: true, nullable: false, description: Ledger status, allowed_values: [posted, reversed]}
+  - {name: source_updated_at, type: TIMESTAMP, required: true, nullable: false, description: Source record version instant}
+validation_rules:
+  - {id: DQ-PAY-001, severity: critical, disposition: rejected, condition: payment_id claim_source_system claim_id claim_submission_sequence transaction_type direction amount payment_date or posted_at is empty}
+  - {id: DQ-PAY-002, severity: critical, disposition: rejected, condition: duplicate natural key exists within the delivery}
+  - {id: DQ-PAY-003, severity: error, disposition: quarantined, condition: complete claim key or populated complete claim-line remittance or payer relationship does not resolve or claim_line_id disagrees with the resolved line}
+  - {id: DQ-PAY-004, severity: error, disposition: quarantined, condition: amount is not positive or currency_code is not USD}
+  - {id: DQ-PAY-005, severity: error, disposition: quarantined, condition: payment_date is after posted_at}
+  - {id: DQ-PAY-006, severity: error, disposition: quarantined, condition: payer_payment lacks remittance_source_system remittance_id or payer_id}
+  - {id: DQ-PAY-007, severity: error, disposition: quarantined, condition: contractual_adjustment write_off refund or reversal lacks adjustment_reason_code}
+  - {id: DQ-PAY-008, severity: error, disposition: quarantined, condition: refund or reversal lacks a complete original-payment key the original does not resolve to a credit transaction for the same complete claim and optional line key or amount exceeds the unreversed original amount or a non-refund/reversal contains a reversal pointer}
+  - {id: DQ-PAY-009, severity: error, disposition: quarantined, condition: signed transaction causes applied payment or adjustment to exceed eligible claim or line financial relationships}
+  - {id: DQ-PAY-010, severity: warning, disposition: accepted_with_warning, condition: billing_spreadsheet source row is valid but arrives after the hourly freshness target}
+  - {id: DQ-PAY-011, severity: error, disposition: quarantined, condition: transaction_type is payer_payment patient_payment contractual_adjustment or write_off and direction is not credit or transaction_type is refund or reversal and direction is not debit}
+  - {id: DQ-PAY-012, severity: error, disposition: quarantined, condition: exactly one of remittance_source_system and remittance_id is populated exactly one of claim_line_number and claim_line_id is populated or exactly one of reverses_payment_source_system and reverses_payment_id is populated instead of both or neither}
+reconciliation:
+  record_count: Exact parsed-row equality and disposition equality required
+  amounts: [amount]
+  signed_amount: credit is positive and debit is negative
+  parent_control: Signed payer payments grouped by remittance_source_system and remittance_id must equal accepted remittance controls
+  tolerance_usd: 0.00
+freshness: {event_field: posted_at, maximum_source_age: PT2H}

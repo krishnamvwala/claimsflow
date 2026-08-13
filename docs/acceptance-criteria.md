@@ -229,4 +229,4 @@ This artifact is ready for baseline approval when:
 
 ## 19. Next Phase 0 artifact
 
-Create the source-data contracts for claims, claim lines, remittances, payments, eligibility, denials, appeals, and reference data.
+Create the governed metric dictionary for denial rate, clean-claim rate, first-pass acceptance rate, days in accounts receivable, outstanding balance, net collection rate, appeal success rate, and recovered revenue.

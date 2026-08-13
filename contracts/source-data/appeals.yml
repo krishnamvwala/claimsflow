@@ -1,0 +1,85 @@
+contract_version: 1.0.0
+contract_id: SRC-APL-001
+name: Synthetic appeal events
+status: baseline_draft
+source_family: appeals
+grain: One appeal level or event for one denial
+description: Human-reviewed synthetic appeal workflow and outcome records; no automated filing action is allowed.
+requirements:
+  - FR-ING-001
+  - FR-ING-004
+  - FR-DQ-001
+  - FR-WH-002
+  - FR-PRI-002
+  - FR-PRI-005
+  - FR-ALT-001
+acceptance_criteria:
+  - AC-ING-001
+  - AC-ING-004
+  - AC-DQ-001
+  - AC-WH-002
+  - AC-PRI-002
+  - AC-PRI-005
+  - AC-ALT-001
+synthetic_only: true
+fixture_profile:
+  baseline_rows_per_month: 6000
+  invalid_fixture_rate: 0.03
+  required_scenarios: [draft, ready_for_human_review, filed, pending, overturned, partially_overturned, upheld, withdrawn, expired, late_unfiled, deadline_mismatch, invalid_event_order, invalid_financials]
+owners: {business: Denial Management, technical: ClaimsFlow Data Engineering}
+delivery:
+  format: csv
+  encoding: UTF-8
+  delimiter: comma
+  header: true
+  compression: none
+  schedule: hourly
+  expected_by_utc: "40 minutes after the hour"
+  late_after: PT2H
+  mode: incremental
+  file_pattern: "{source_system}_appeals_{extract_at_utc}_{sequence}.csv"
+keys:
+  natural_key: [source_system, appeal_id]
+  source_record_id: [appeal_id]
+relationships:
+  - {fields: [denial_source_system, denial_id], target: denials.source_system+denial_id, required: true, match: exact_key, cardinality: exactly_one}
+  - {fields: [claim_source_system, claim_id, claim_submission_sequence], target: claims.source_system+claim_id+submission_sequence, required: true, match: exact_key, cardinality: exactly_one}
+schema:
+  - {name: appeal_id, type: STRING, required: true, nullable: false, description: Stable synthetic appeal-event identifier}
+  - {name: denial_source_system, type: STRING, required: true, nullable: false, description: Source system from the linked denial delivery envelope}
+  - {name: denial_id, type: STRING, required: true, nullable: false, description: Parent denial identifier}
+  - {name: claim_source_system, type: STRING, required: true, nullable: false, description: Source system from the linked claim delivery envelope}
+  - {name: claim_id, type: STRING, required: true, nullable: false, description: Parent claim identifier}
+  - {name: claim_submission_sequence, type: INTEGER, required: true, nullable: false, description: Parent claim submission sequence, minimum: 1}
+  - {name: appeal_level, type: INTEGER, required: true, nullable: false, description: One-based appeal level, minimum: 1, maximum: 3}
+  - {name: appeal_status, type: STRING, required: true, nullable: false, description: Human workflow state, allowed_values: [draft, ready_for_human_review, filed, pending, overturned, partially_overturned, upheld, withdrawn, expired]}
+  - {name: created_at, type: TIMESTAMP, required: true, nullable: false, description: Appeal work-item creation instant}
+  - {name: filed_at, type: TIMESTAMP, required: true, nullable: true, description: Human-confirmed filing instant}
+  - {name: appeal_deadline_date, type: DATE, required: true, nullable: false, description: Last permitted appeal date}
+  - {name: decision_date, type: DATE, required: true, nullable: true, description: Payer decision date}
+  - {name: outcome, type: STRING, required: true, nullable: true, description: Payer appeal outcome, allowed_values: [overturned, partially_overturned, upheld, withdrawn]}
+  - {name: requested_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Amount requested for recovery in USD, minimum_exclusive: 0.00}
+  - {name: recovered_amount, type: "NUMERIC(18,2)", required: true, nullable: true, description: Amount recovered in USD after decision, minimum: 0.00}
+  - {name: currency_code, type: STRING, required: true, nullable: false, description: ISO 4217 currency, allowed_values: [USD]}
+  - {name: documentation_ready_flag, type: BOOLEAN, required: true, nullable: false, description: Required documentation readiness indicator}
+  - {name: owner_queue, type: STRING, required: true, nullable: false, description: Human review queue; not an automated submission destination}
+  - {name: source_updated_at, type: TIMESTAMP, required: true, nullable: false, description: Source record version instant}
+validation_rules:
+  - {id: DQ-APL-001, severity: critical, disposition: rejected, condition: appeal_id denial_source_system denial_id claim_source_system claim_id claim_submission_sequence appeal_level appeal_status or appeal_deadline_date is empty}
+  - {id: DQ-APL-002, severity: critical, disposition: rejected, condition: duplicate natural key exists within the delivery}
+  - {id: DQ-APL-003, severity: error, disposition: quarantined, condition: complete denial or claim key does not resolve or the resolved denial belongs to a different complete claim key}
+  - {id: DQ-APL-004, severity: error, disposition: quarantined, condition: UTC date of created_at or filed_at is after appeal_deadline_date for a non-expired record}
+  - {id: DQ-APL-005, severity: error, disposition: quarantined, condition: filed pending or decided status lacks filed_at}
+  - {id: DQ-APL-006, severity: error, disposition: quarantined, condition: decided status lacks decision_date or outcome or a non-decided status contains either value}
+  - {id: DQ-APL-007, severity: error, disposition: quarantined, condition: requested_amount is not positive recovered_amount is negative or exceeds requested_amount or currency_code is not USD}
+  - {id: DQ-APL-008, severity: error, disposition: quarantined, condition: appeal_status advances to ready_for_human_review or filed while documentation_ready_flag is false}
+  - {id: DQ-APL-009, severity: warning, disposition: accepted_with_warning, condition: an unfiled appeal is within 7 calendar days of appeal_deadline_date}
+  - {id: DQ-APL-010, severity: critical, disposition: block_batch, condition: source exposes an automatic file submit or approve action instead of human workflow evidence}
+  - {id: DQ-APL-011, severity: error, disposition: quarantined, condition: appeal_deadline_date does not equal the resolved parent denial appeal_deadline_date}
+  - {id: DQ-APL-012, severity: error, disposition: quarantined, condition: filed_at is before created_at or decision_date is before the UTC calendar date of created_at or filed_at}
+reconciliation:
+  record_count: Exact parsed-row equality and disposition equality required
+  amounts: [requested_amount, recovered_amount]
+  parent_control: Requested amount cannot exceed accepted parent denied amount and recovered amount cannot exceed requested amount
+  tolerance_usd: 0.00
+freshness: {event_field: source_updated_at, maximum_source_age: PT2H}

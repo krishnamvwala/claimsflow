@@ -4,9 +4,10 @@ Healthcare claims analytics, denial prevention, and revenue recovery platform bu
 
 ## Project status
 
-ClaimsFlow is in Phase 0: Discovery and Success Contract. Implementation will proceed only after the requirements, acceptance criteria, source-data contracts, metric definitions, and initial architecture decisions are documented.
+ClaimsFlow is in Phase 0: Discovery and Success Contract. Requirements, acceptance criteria, and machine-readable source-data contracts are documented. Implementation will proceed after the governed metric dictionary and initial architecture decisions are approved.
 
 ## Project documentation
 
 - [Requirements](docs/requirements.md)
 - [Acceptance criteria](docs/acceptance-criteria.md)
+- [Source-data contracts](docs/source-data-contracts/README.md)

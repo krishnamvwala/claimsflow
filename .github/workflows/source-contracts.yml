@@ -1,0 +1,41 @@
+name: Source contract validation
+
+on:
+  pull_request:
+    paths:
+      - "README.md"
+      - "contracts/source-data/**"
+      - "docs/acceptance-criteria.md"
+      - "docs/source-data-contracts/**"
+      - "docs/requirements.md"
+      - "scripts/validate_source_contracts.rb"
+      - "scripts/test_source_contract_validator.rb"
+      - ".github/workflows/source-contracts.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "README.md"
+      - "contracts/source-data/**"
+      - "docs/acceptance-criteria.md"
+      - "docs/source-data-contracts/**"
+      - "docs/requirements.md"
+      - "scripts/validate_source_contracts.rb"
+      - "scripts/test_source_contract_validator.rb"
+      - ".github/workflows/source-contracts.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+      - name: Validate source contracts
+        run: ruby scripts/validate_source_contracts.rb
+      - name: Test validator failure cases
+        run: ruby scripts/test_source_contract_validator.rb

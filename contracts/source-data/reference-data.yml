@@ -1,0 +1,148 @@
+contract_version: 1.0.0
+contract_id: SRC-REF-001
+name: Synthetic reference data
+status: baseline_draft
+source_family: reference-data
+grain: One effective-dated version of one reference entity or code
+description: Conformed synthetic payer plan provider facility diagnosis procedure and denial-reason reference snapshots.
+requirements:
+  - FR-ING-001
+  - FR-ING-004
+  - FR-DQ-001
+  - FR-DQ-002
+  - FR-WH-003
+  - FR-WH-006
+  - FR-MET-003
+  - FR-PRI-002
+acceptance_criteria:
+  - AC-ING-001
+  - AC-ING-004
+  - AC-DQ-001
+  - AC-DQ-002
+  - AC-WH-003
+  - AC-WH-006
+  - AC-MET-003
+  - AC-PRI-002
+synthetic_only: true
+fixture_profile:
+  baseline_rows_per_month: 5000
+  invalid_fixture_rate: 0.01
+  required_scenarios: [new_version, expired_version, overlapping_interval, duplicate_current, missing_dataset, orphan_plan, invalid_rate]
+owners: {business: Revenue Cycle Data Governance, technical: ClaimsFlow Data Engineering}
+delivery:
+  format: csv
+  encoding: UTF-8
+  delimiter: comma
+  header: true
+  compression: none
+  schedule: daily
+  expected_by_utc: "08:00:00Z"
+  late_after: PT30H
+  mode: full_snapshot
+  file_pattern: "{source_system}_{dataset_name}_{effective_date}_{sequence}.csv"
+keys:
+  natural_key: dataset_specific
+  source_record_id: dataset_specific
+relationships:
+  - {fields: [plans.payer_id], target: reference-data.payers.payer_id, required: true, match: effective_at, as_of_field: plans.valid_from, cardinality: exactly_one_effective}
+datasets:
+  - name: payers
+    grain: One effective-dated payer version
+    natural_key: [payer_id, valid_from]
+    source_record_id: [payer_id, valid_from]
+    schema:
+      - {name: payer_id, type: STRING, required: true, nullable: false, description: Stable synthetic payer identifier}
+      - {name: payer_name, type: STRING, required: true, nullable: false, description: Synthetic payer display name}
+      - {name: payer_type, type: STRING, required: true, nullable: false, description: Payer segment, allowed_values: [commercial, medicare, medicaid, self_pay, other]}
+      - {name: timely_filing_days, type: INTEGER, required: true, nullable: false, description: Synthetic filing window in calendar days, minimum: 1}
+      - {name: appeal_window_days, type: INTEGER, required: true, nullable: false, description: Synthetic appeal window in calendar days, minimum: 1}
+      - {name: expected_response_days, type: INTEGER, required: true, nullable: false, description: Synthetic response-time baseline, minimum: 1}
+      - {name: historical_resolution_rate, type: "NUMERIC(9,4)", required: true, nullable: false, description: Synthetic prior resolution rate used only by transparent rules, minimum: 0.0000, maximum: 1.0000}
+      - {name: valid_from, type: DATE, required: true, nullable: false, description: Inclusive effective date}
+      - {name: valid_to, type: DATE, required: true, nullable: true, description: Exclusive effective end date}
+      - {name: active_flag, type: BOOLEAN, required: true, nullable: false, description: Current active indicator}
+  - name: plans
+    grain: One effective-dated payer plan version
+    natural_key: [plan_id, valid_from]
+    source_record_id: [plan_id, valid_from]
+    schema:
+      - {name: plan_id, type: STRING, required: true, nullable: false, description: Stable synthetic plan identifier}
+      - {name: payer_id, type: STRING, required: true, nullable: false, description: Parent payer identifier}
+      - {name: plan_name, type: STRING, required: true, nullable: false, description: Synthetic plan display name}
+      - {name: coverage_type, type: STRING, required: true, nullable: false, description: Plan coverage type, allowed_values: [commercial, medicare, medicaid, self_pay, other]}
+      - {name: valid_from, type: DATE, required: true, nullable: false, description: Inclusive effective date}
+      - {name: valid_to, type: DATE, required: true, nullable: true, description: Exclusive effective end date}
+      - {name: active_flag, type: BOOLEAN, required: true, nullable: false, description: Current active indicator}
+  - name: providers
+    grain: One effective-dated provider version
+    natural_key: [provider_id, valid_from]
+    source_record_id: [provider_id, valid_from]
+    schema:
+      - {name: provider_id, type: STRING, required: true, nullable: false, description: Stable synthetic provider identifier}
+      - {name: provider_name, type: STRING, required: true, nullable: false, description: Synthetic provider display name}
+      - {name: specialty_code, type: STRING, required: true, nullable: false, description: Synthetic specialty reference}
+      - {name: valid_from, type: DATE, required: true, nullable: false, description: Inclusive effective date}
+      - {name: valid_to, type: DATE, required: true, nullable: true, description: Exclusive effective end date}
+      - {name: active_flag, type: BOOLEAN, required: true, nullable: false, description: Current active indicator}
+  - name: facilities
+    grain: One effective-dated facility version
+    natural_key: [facility_id, valid_from]
+    source_record_id: [facility_id, valid_from]
+    schema:
+      - {name: facility_id, type: STRING, required: true, nullable: false, description: Stable synthetic facility identifier}
+      - {name: facility_name, type: STRING, required: true, nullable: false, description: Synthetic facility display name}
+      - {name: clinic_number, type: INTEGER, required: true, nullable: false, description: Fictional clinic number from 1 through 20, minimum: 1, maximum: 20}
+      - {name: region, type: STRING, required: true, nullable: false, description: Synthetic operating region}
+      - {name: valid_from, type: DATE, required: true, nullable: false, description: Inclusive effective date}
+      - {name: valid_to, type: DATE, required: true, nullable: true, description: Exclusive effective end date}
+      - {name: active_flag, type: BOOLEAN, required: true, nullable: false, description: Current active indicator}
+  - name: diagnoses
+    grain: One effective-dated diagnosis code version
+    natural_key: [diagnosis_code, code_system, valid_from]
+    source_record_id: [diagnosis_code, code_system, valid_from]
+    schema:
+      - {name: diagnosis_code, type: STRING, required: true, nullable: false, description: Synthetic or public-format diagnosis code}
+      - {name: code_system, type: STRING, required: true, nullable: false, description: Code family, allowed_values: [ICD-10-CM, SYNTHETIC]}
+      - {name: diagnosis_description, type: STRING, required: true, nullable: false, description: Non-clinical portfolio description}
+      - {name: valid_from, type: DATE, required: true, nullable: false, description: Inclusive effective date}
+      - {name: valid_to, type: DATE, required: true, nullable: true, description: Exclusive effective end date}
+      - {name: active_flag, type: BOOLEAN, required: true, nullable: false, description: Current active indicator}
+  - name: procedures
+    grain: One effective-dated procedure code version
+    natural_key: [procedure_code, code_system, valid_from]
+    source_record_id: [procedure_code, code_system, valid_from]
+    schema:
+      - {name: procedure_code, type: STRING, required: true, nullable: false, description: Synthetic or public-format procedure code}
+      - {name: code_system, type: STRING, required: true, nullable: false, description: Code family, allowed_values: [CPT, HCPCS, SYNTHETIC]}
+      - {name: procedure_description, type: STRING, required: true, nullable: false, description: Non-clinical portfolio description}
+      - {name: valid_from, type: DATE, required: true, nullable: false, description: Inclusive effective date}
+      - {name: valid_to, type: DATE, required: true, nullable: true, description: Exclusive effective end date}
+      - {name: active_flag, type: BOOLEAN, required: true, nullable: false, description: Current active indicator}
+  - name: denial-reasons
+    grain: One effective-dated denial-reason version
+    natural_key: [denial_reason_code, valid_from]
+    source_record_id: [denial_reason_code, valid_from]
+    schema:
+      - {name: denial_reason_code, type: STRING, required: true, nullable: false, description: Stable denial-reason code}
+      - {name: denial_category, type: STRING, required: true, nullable: false, description: Governed denial category}
+      - {name: denial_reason_description, type: STRING, required: true, nullable: false, description: Plain-language synthetic reason}
+      - {name: preventable_default_flag, type: BOOLEAN, required: true, nullable: false, description: Configured preventability default}
+      - {name: required_document_codes, type: STRING_LIST, required: true, nullable: true, description: Evidence normally required for human appeal review}
+      - {name: historical_resolution_rate, type: "NUMERIC(9,4)", required: true, nullable: false, description: Synthetic prior resolution rate used only by transparent rules, minimum: 0.0000, maximum: 1.0000}
+      - {name: valid_from, type: DATE, required: true, nullable: false, description: Inclusive effective date}
+      - {name: valid_to, type: DATE, required: true, nullable: true, description: Exclusive effective end date}
+      - {name: active_flag, type: BOOLEAN, required: true, nullable: false, description: Current active indicator}
+validation_rules:
+  - {id: DQ-REF-001, severity: critical, disposition: rejected, condition: a dataset-specific natural-key field is empty}
+  - {id: DQ-REF-002, severity: critical, disposition: rejected, condition: duplicate dataset-specific natural key exists within the snapshot}
+  - {id: DQ-REF-003, severity: error, disposition: quarantined, condition: valid_to is present and is not after valid_from}
+  - {id: DQ-REF-004, severity: error, disposition: quarantined, condition: effective intervals for the same business identifier overlap}
+  - {id: DQ-REF-005, severity: error, disposition: quarantined, condition: more than one current version exists for a business identifier}
+  - {id: DQ-REF-006, severity: error, disposition: quarantined, condition: a plan payer_id does not resolve during the plan validity interval}
+  - {id: DQ-REF-007, severity: error, disposition: quarantined, condition: a rate is outside 0.0000 through 1.0000 or a configured day window is not positive}
+  - {id: DQ-REF-008, severity: critical, disposition: block_batch, condition: a required reference dataset is absent from the daily snapshot}
+reconciliation:
+  record_count: Exact parsed-row equality and disposition equality required per dataset
+  snapshot_control: Each required dataset count and stable-hash set must match its manifest
+  tolerance_usd: 0.00
+freshness: {event_field: source_extract_at, maximum_source_age: PT30H}

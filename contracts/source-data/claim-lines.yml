@@ -1,0 +1,93 @@
+contract_version: 1.0.0
+contract_id: SRC-CLN-001
+name: Synthetic claim lines
+status: baseline_draft
+source_family: claim-lines
+grain: One service line on one claim submission version
+description: Source claim-line detail from synthetic EHR and clearinghouse extracts.
+requirements:
+  - FR-ING-001
+  - FR-ING-004
+  - FR-DQ-001
+  - FR-DQ-002
+  - FR-WH-002
+  - FR-WH-003
+  - FR-WH-007
+  - FR-MET-003
+acceptance_criteria:
+  - AC-ING-001
+  - AC-ING-004
+  - AC-DQ-001
+  - AC-DQ-002
+  - AC-WH-002
+  - AC-WH-003
+  - AC-WH-007
+  - AC-MET-003
+synthetic_only: true
+fixture_profile:
+  baseline_rows_per_month: 225000
+  invalid_fixture_rate: 0.02
+  required_scenarios: [multi_line_claim, duplicate_line, orphan_line, invalid_code, reversed_dates, financial_mismatch, denied_line]
+owners: {business: Revenue Cycle Operations, technical: ClaimsFlow Data Engineering}
+delivery:
+  format: csv
+  encoding: UTF-8
+  delimiter: comma
+  header: true
+  compression: none
+  schedule: hourly
+  expected_by_utc: "20 minutes after the hour"
+  late_after: PT90M
+  mode: incremental
+  file_pattern: "{source_system}_claim_lines_{extract_at_utc}_{sequence}.csv"
+keys:
+  natural_key: [source_system, claim_id, submission_sequence, line_number]
+  source_record_id: [claim_id, submission_sequence, line_number]
+relationships:
+  - {fields: [source_system, claim_id, submission_sequence], target: claims.source_system+claim_id+submission_sequence, required: true, match: exact_key, cardinality: exactly_one}
+  - {fields: [procedure_code, procedure_code_system], target: reference-data.procedures.procedure_code+code_system, required: true, match: effective_at, as_of_field: service_from_date, cardinality: exactly_one_effective}
+  - {fields: [diagnosis_codes, diagnosis_code_system], target: reference-data.diagnoses.diagnosis_code+code_system, required: true, match: effective_at, as_of_field: service_from_date, cardinality: exactly_one_per_list_member, mode: every_list_member}
+  - {fields: [denial_reason_code], target: reference-data.denial-reasons.denial_reason_code, required: false, match: effective_at, as_of_field: service_from_date, cardinality: zero_or_one_effective}
+schema:
+  - {name: claim_id, type: STRING, required: true, nullable: false, description: Parent synthetic claim identifier}
+  - {name: submission_sequence, type: INTEGER, required: true, nullable: false, description: Parent claim submission sequence, minimum: 1}
+  - {name: line_number, type: INTEGER, required: true, nullable: false, description: One-based line position, minimum: 1}
+  - {name: claim_line_id, type: STRING, required: true, nullable: false, description: Stable synthetic line identifier}
+  - {name: service_from_date, type: DATE, required: true, nullable: false, description: First line service date}
+  - {name: service_to_date, type: DATE, required: true, nullable: false, description: Last line service date}
+  - {name: procedure_code, type: STRING, required: true, nullable: false, description: CPT HCPCS or synthetic procedure reference}
+  - {name: procedure_code_system, type: STRING, required: true, nullable: false, description: Procedure code family, allowed_values: [CPT, HCPCS, SYNTHETIC]}
+  - {name: procedure_modifiers, type: STRING_LIST, required: true, nullable: true, description: Ordered procedure modifier codes}
+  - {name: diagnosis_codes, type: STRING_LIST, required: true, nullable: false, description: Ordered diagnosis references for the service line}
+  - {name: diagnosis_code_system, type: STRING, required: true, nullable: false, description: Code family shared by diagnosis_codes, allowed_values: [ICD-10-CM, SYNTHETIC]}
+  - {name: place_of_service_code, type: STRING, required: true, nullable: false, description: Two-character place-of-service code, pattern: "^[0-9]{2}$"}
+  - {name: revenue_code, type: STRING, required: true, nullable: true, description: Four-character institutional revenue code, pattern: "^[0-9]{4}$"}
+  - {name: units, type: "NUMERIC(9,4)", required: true, nullable: false, description: Positive billed units, minimum_exclusive: 0}
+  - {name: line_status, type: STRING, required: true, nullable: false, description: Service-line adjudication state, allowed_values: [submitted, accepted, rejected, denied, partially_paid, paid, voided]}
+  - {name: denial_reason_code, type: STRING, required: true, nullable: true, description: Source denial reason when line is denied}
+  - {name: billed_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Line billed amount in USD, minimum: 0.00}
+  - {name: allowed_amount, type: "NUMERIC(18,2)", required: true, nullable: true, description: Line allowed amount in USD, minimum: 0.00}
+  - {name: payer_paid_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Net payer-originated payments posted to the line in USD, minimum: 0.00}
+  - {name: patient_paid_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Net patient-originated payments posted to the line in USD, minimum: 0.00}
+  - {name: patient_responsibility_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Line patient responsibility in USD, minimum: 0.00}
+  - {name: adjustment_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Line adjustment amount in USD, minimum: 0.00}
+  - {name: outstanding_balance, type: "NUMERIC(18,2)", required: true, nullable: false, description: Line remaining balance in USD, minimum: 0.00}
+  - {name: currency_code, type: STRING, required: true, nullable: false, description: ISO 4217 currency, allowed_values: [USD]}
+  - {name: source_updated_at, type: TIMESTAMP, required: true, nullable: false, description: Source record version instant}
+validation_rules:
+  - {id: DQ-CLN-001, severity: critical, disposition: rejected, condition: claim_id claim_line_id or line_number is empty}
+  - {id: DQ-CLN-002, severity: critical, disposition: rejected, condition: duplicate natural key or duplicate claim_line_id exists within the delivery}
+  - {id: DQ-CLN-003, severity: error, disposition: quarantined, condition: parent claim submission does not resolve}
+  - {id: DQ-CLN-004, severity: error, disposition: quarantined, condition: service dates are reversed or outside parent claim service dates}
+  - {id: DQ-CLN-005, severity: error, disposition: quarantined, condition: procedure diagnosis place-of-service or revenue code format or reference is invalid}
+  - {id: DQ-CLN-006, severity: error, disposition: quarantined, condition: any monetary value is negative or currency_code is not USD}
+  - {id: DQ-CLN-007, severity: error, disposition: quarantined, condition: billed_amount differs from payer_paid_amount plus patient_paid_amount plus adjustment_amount plus outstanding_balance by more than 0.00}
+  - {id: DQ-CLN-008, severity: error, disposition: quarantined, condition: line_status is denied and denial_reason_code is empty or unknown}
+  - {id: DQ-CLN-009, severity: error, disposition: quarantined, condition: allowed_amount is present and payer_paid_amount plus patient_responsibility_amount exceeds allowed_amount without a linked reversal}
+  - {id: DQ-CLN-010, severity: error, disposition: quarantined, condition: patient_paid_amount exceeds patient_responsibility_amount}
+reconciliation:
+  record_count: Exact parsed-row equality and disposition equality required
+  parent_rollup: Sum line amounts by source_system claim_id and submission_sequence must equal accepted claim header amounts
+  amounts: [billed_amount, payer_paid_amount, patient_paid_amount, adjustment_amount, outstanding_balance]
+  tolerance_usd: 0.00
+freshness: {event_field: source_updated_at, maximum_source_age: PT90M}
