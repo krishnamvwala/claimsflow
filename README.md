@@ -9,3 +9,4 @@ ClaimsFlow is in Phase 0: Discovery and Success Contract. Implementation will pr
 ## Project documentation
 
 - [Requirements](docs/requirements.md)
+- [Acceptance criteria](docs/acceptance-criteria.md)
