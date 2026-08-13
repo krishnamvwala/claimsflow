@@ -1,0 +1,68 @@
+contract_version: 1.0.0
+contract_id: SRC-ELG-001
+name: Synthetic eligibility responses
+status: baseline_draft
+source_family: eligibility
+grain: One coverage-verification response for one patient payer and plan
+description: Synthetic eligibility-verification results used to establish coverage at service time.
+requirements:
+  - FR-ING-001
+  - FR-ING-004
+  - FR-DQ-001
+  - FR-DQ-002
+  - FR-WH-003
+synthetic_only: true
+fixture_profile:
+  baseline_rows_per_month: 110000
+  invalid_fixture_rate: 0.02
+  required_scenarios: [active, inactive, pending, unknown, failed, missing_identity, payer_plan_mismatch, invalid_coverage_window]
+owners: {business: Patient Access Operations, technical: ClaimsFlow Data Engineering}
+delivery:
+  format: csv
+  encoding: UTF-8
+  delimiter: comma
+  header: true
+  compression: none
+  schedule: daily
+  expected_by_utc: "10:00:00Z"
+  late_after: PT30H
+  mode: incremental
+  file_pattern: "{source_system}_eligibility_{extract_date}_{sequence}.csv"
+keys:
+  natural_key: [source_system, eligibility_id]
+  source_record_id: [eligibility_id]
+relationships:
+  - {fields: [payer_id], target: reference-data.payers.payer_id, required: true}
+  - {fields: [plan_id], target: reference-data.plans.plan_id, required: true}
+schema:
+  - {name: eligibility_id, type: STRING, required: true, nullable: false, description: Stable synthetic eligibility response identifier}
+  - {name: patient_id, type: STRING, required: true, nullable: false, description: Stable synthetic patient identifier}
+  - {name: payer_id, type: STRING, required: true, nullable: false, description: Payer reference}
+  - {name: plan_id, type: STRING, required: true, nullable: false, description: Coverage plan reference}
+  - {name: member_reference, type: STRING, required: true, nullable: false, description: Synthetic non-production membership reference}
+  - {name: verification_at, type: TIMESTAMP, required: true, nullable: false, description: Eligibility request/response instant}
+  - {name: response_status, type: STRING, required: true, nullable: false, description: Verification response state, allowed_values: [confirmed, inactive, unknown, failed]}
+  - {name: coverage_status, type: STRING, required: true, nullable: false, description: Coverage state, allowed_values: [active, inactive, pending, unknown]}
+  - {name: coverage_type, type: STRING, required: true, nullable: false, description: Benefit product type, allowed_values: [commercial, medicare, medicaid, self_pay, other]}
+  - {name: coverage_start_date, type: DATE, required: true, nullable: true, description: Inclusive coverage start date}
+  - {name: coverage_end_date, type: DATE, required: true, nullable: true, description: Exclusive coverage end date}
+  - {name: primary_coverage_flag, type: BOOLEAN, required: true, nullable: false, description: Primary coverage indicator}
+  - {name: deductible_remaining, type: "NUMERIC(18,2)", required: true, nullable: true, description: Synthetic remaining deductible in USD, minimum: 0.00}
+  - {name: out_of_pocket_remaining, type: "NUMERIC(18,2)", required: true, nullable: true, description: Synthetic remaining out-of-pocket amount in USD, minimum: 0.00}
+  - {name: copay_amount, type: "NUMERIC(18,2)", required: true, nullable: true, description: Synthetic service copay in USD, minimum: 0.00}
+  - {name: currency_code, type: STRING, required: true, nullable: false, description: ISO 4217 currency, allowed_values: [USD]}
+  - {name: source_updated_at, type: TIMESTAMP, required: true, nullable: false, description: Source record version instant}
+validation_rules:
+  - {id: DQ-ELG-001, severity: critical, disposition: rejected, condition: eligibility_id patient_id payer_id plan_id member_reference or verification_at is empty}
+  - {id: DQ-ELG-002, severity: critical, disposition: rejected, condition: duplicate natural key exists within the delivery}
+  - {id: DQ-ELG-003, severity: error, disposition: quarantined, condition: payer_id or plan_id does not resolve at verification_at}
+  - {id: DQ-ELG-004, severity: error, disposition: quarantined, condition: plan_id belongs to a different payer_id}
+  - {id: DQ-ELG-005, severity: error, disposition: quarantined, condition: coverage_end_date is not after coverage_start_date}
+  - {id: DQ-ELG-006, severity: error, disposition: quarantined, condition: active coverage lacks coverage_start_date or has verification_at outside the coverage interval}
+  - {id: DQ-ELG-007, severity: error, disposition: quarantined, condition: a monetary value is negative or currency_code is not USD}
+  - {id: DQ-ELG-008, severity: warning, disposition: accepted_with_warning, condition: response_status or coverage_status is unknown and no active claim depends on the response}
+reconciliation:
+  record_count: Exact parsed-row equality and disposition equality required
+  amounts: [deductible_remaining, out_of_pocket_remaining, copay_amount]
+  tolerance_usd: 0.00
+freshness: {event_field: verification_at, maximum_source_age: PT30H}

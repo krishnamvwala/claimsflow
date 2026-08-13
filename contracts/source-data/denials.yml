@@ -1,0 +1,80 @@
+contract_version: 1.0.0
+contract_id: SRC-DEN-001
+name: Synthetic denial events
+status: baseline_draft
+source_family: denials
+grain: One denial event for a claim or claim line
+description: Synthetic payer denial events with reason, exposure, readiness, and deadline evidence.
+requirements:
+  - FR-ING-001
+  - FR-ING-004
+  - FR-DQ-001
+  - FR-DQ-002
+  - FR-WH-002
+  - FR-WH-003
+  - FR-MET-003
+  - FR-PRI-002
+  - FR-PRI-005
+  - FR-PRI-006
+  - FR-ALT-001
+  - FR-ALT-002
+  - FR-ALT-006
+synthetic_only: true
+fixture_profile:
+  baseline_rows_per_month: 12000
+  invalid_fixture_rate: 0.03
+  required_scenarios: [claim_denial, line_denial, denial_spike, near_deadline, expired_deadline, missing_reason, missing_deadline, financial_mismatch, unresolved_backlog]
+owners: {business: Denial Management, technical: ClaimsFlow Data Engineering}
+delivery:
+  format: csv
+  encoding: UTF-8
+  delimiter: comma
+  header: true
+  compression: none
+  schedule: hourly
+  expected_by_utc: "35 minutes after the hour"
+  late_after: PT2H
+  mode: incremental
+  file_pattern: "{source_system}_denials_{extract_at_utc}_{sequence}.csv"
+keys:
+  natural_key: [source_system, denial_id]
+  source_record_id: [denial_id]
+relationships:
+  - {fields: [claim_id], target: claims.claim_id, required: true}
+  - {fields: [claim_id, claim_line_id], target: claim-lines.claim_id+claim_line_id, required: false}
+  - {fields: [payer_id], target: reference-data.payers.payer_id, required: true}
+  - {fields: [denial_reason_code], target: reference-data.denial-reasons.denial_reason_code, required: true}
+schema:
+  - {name: denial_id, type: STRING, required: true, nullable: false, description: Stable synthetic denial-event identifier}
+  - {name: claim_id, type: STRING, required: true, nullable: false, description: Denied claim identifier}
+  - {name: claim_line_id, type: STRING, required: true, nullable: true, description: Denied line identifier when line-specific}
+  - {name: payer_id, type: STRING, required: true, nullable: false, description: Denying payer reference}
+  - {name: denial_reason_code, type: STRING, required: true, nullable: false, description: Denial-reason reference}
+  - {name: denial_category, type: STRING, required: true, nullable: false, description: Source denial category matching the reference mapping}
+  - {name: denial_date, type: DATE, required: true, nullable: false, description: Payer denial effective date}
+  - {name: received_at, type: TIMESTAMP, required: true, nullable: false, description: Denial receipt instant}
+  - {name: denied_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Amount denied in USD, minimum_exclusive: 0.00}
+  - {name: currency_code, type: STRING, required: true, nullable: false, description: ISO 4217 currency, allowed_values: [USD]}
+  - {name: filing_deadline_date, type: DATE, required: true, nullable: false, description: Last permitted corrected-claim filing date}
+  - {name: appeal_deadline_date, type: DATE, required: true, nullable: false, description: Last permitted appeal date}
+  - {name: denial_status, type: STRING, required: true, nullable: false, description: Denial workflow state, allowed_values: [open, under_review, appealed, overturned, upheld, expired, withdrawn]}
+  - {name: preventable_flag, type: BOOLEAN, required: true, nullable: false, description: Synthetic configured preventability indicator}
+  - {name: documentation_ready_flag, type: BOOLEAN, required: true, nullable: false, description: Required documentation readiness indicator}
+  - {name: missing_document_codes, type: STRING_LIST, required: true, nullable: true, description: Synthetic missing-document references}
+  - {name: source_updated_at, type: TIMESTAMP, required: true, nullable: false, description: Source record version instant}
+validation_rules:
+  - {id: DQ-DEN-001, severity: critical, disposition: rejected, condition: denial_id claim_id payer_id denial_reason_code denial_date or received_at is empty}
+  - {id: DQ-DEN-002, severity: critical, disposition: rejected, condition: duplicate natural key exists within the delivery}
+  - {id: DQ-DEN-003, severity: error, disposition: quarantined, condition: claim_id populated claim_line_id or payer_id does not resolve consistently}
+  - {id: DQ-DEN-004, severity: error, disposition: quarantined, condition: denial_reason_code is unknown invalid at denial_date or disagrees with denial_category}
+  - {id: DQ-DEN-005, severity: error, disposition: quarantined, condition: denial_date is after received_at or before the related service or submission date}
+  - {id: DQ-DEN-006, severity: error, disposition: quarantined, condition: denied_amount is not positive exceeds related outstanding exposure or currency_code is not USD}
+  - {id: DQ-DEN-007, severity: error, disposition: quarantined, condition: filing_deadline_date or appeal_deadline_date is missing or before denial_date}
+  - {id: DQ-DEN-008, severity: error, disposition: quarantined, condition: documentation_ready_flag is true while missing_document_codes is nonempty}
+  - {id: DQ-DEN-009, severity: warning, disposition: accepted_with_warning, condition: an open denial is within 7 calendar days of its appeal deadline}
+reconciliation:
+  record_count: Exact parsed-row equality and disposition equality required
+  amounts: [denied_amount]
+  parent_control: Accepted denied_amount cannot exceed accepted related outstanding exposure
+  tolerance_usd: 0.00
+freshness: {event_field: received_at, maximum_source_age: PT2H}

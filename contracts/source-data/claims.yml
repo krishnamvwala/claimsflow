@@ -1,0 +1,108 @@
+contract_version: 1.0.0
+contract_id: SRC-CLM-001
+name: Synthetic claims
+status: baseline_draft
+source_family: claims
+grain: One claim submission version per source system
+description: Source claim headers from synthetic EHR and clearinghouse extracts.
+requirements:
+  - FR-ING-001
+  - FR-ING-004
+  - FR-DQ-001
+  - FR-DQ-002
+  - FR-WH-002
+  - FR-WH-003
+  - FR-WH-007
+synthetic_only: true
+fixture_profile:
+  baseline_rows_per_month: 100000
+  invalid_fixture_rate: 0.02
+  required_scenarios: [original, replacement, void, duplicate, missing_identity, invalid_dates, missing_reference, financial_mismatch, missing_deadline]
+owners:
+  business: Revenue Cycle Operations
+  technical: ClaimsFlow Data Engineering
+delivery:
+  format: csv
+  encoding: UTF-8
+  delimiter: comma
+  header: true
+  compression: none
+  schedule: hourly
+  expected_by_utc: "15 minutes after the hour"
+  late_after: PT90M
+  mode: incremental
+  file_pattern: "{source_system}_claims_{extract_at_utc}_{sequence}.csv"
+keys:
+  natural_key:
+    - source_system
+    - claim_id
+    - submission_sequence
+  source_record_id:
+    - claim_id
+    - submission_sequence
+relationships:
+  - fields: [patient_id]
+    target: eligibility.patient_id
+    required: true
+  - fields: [provider_id]
+    target: reference-data.providers.provider_id
+    required: true
+  - fields: [facility_id]
+    target: reference-data.facilities.facility_id
+    required: true
+  - fields: [payer_id]
+    target: reference-data.payers.payer_id
+    required: true
+  - fields: [plan_id]
+    target: reference-data.plans.plan_id
+    required: true
+schema:
+  - {name: claim_id, type: STRING, required: true, nullable: false, description: Stable synthetic claim identifier}
+  - {name: submission_sequence, type: INTEGER, required: true, nullable: false, description: One-based submission or corrected-claim sequence, minimum: 1}
+  - {name: original_claim_id, type: STRING, required: true, nullable: true, description: Prior claim identifier for replacement or void submissions}
+  - {name: patient_id, type: STRING, required: true, nullable: false, description: Stable synthetic patient identifier}
+  - {name: provider_id, type: STRING, required: true, nullable: false, description: Rendering provider reference}
+  - {name: facility_id, type: STRING, required: true, nullable: false, description: Servicing facility reference}
+  - {name: payer_id, type: STRING, required: true, nullable: false, description: Primary payer reference}
+  - {name: plan_id, type: STRING, required: true, nullable: false, description: Coverage plan reference}
+  - {name: claim_type, type: STRING, required: true, nullable: false, description: Claim form family, allowed_values: [professional, institutional]}
+  - {name: claim_status, type: STRING, required: true, nullable: false, description: Source claim lifecycle state, allowed_values: [submitted, accepted, rejected, denied, partially_paid, paid, voided]}
+  - {name: submission_type, type: STRING, required: true, nullable: false, description: Submission action, allowed_values: [original, replacement, void]}
+  - {name: service_from_date, type: DATE, required: true, nullable: false, description: First service date}
+  - {name: service_to_date, type: DATE, required: true, nullable: false, description: Last service date}
+  - {name: submitted_at, type: TIMESTAMP, required: true, nullable: false, description: Source submission instant}
+  - {name: adjudicated_at, type: TIMESTAMP, required: true, nullable: true, description: Latest payer adjudication instant}
+  - {name: primary_diagnosis_code, type: STRING, required: true, nullable: false, description: Primary diagnosis code}
+  - {name: billed_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Total amount billed in USD, minimum: 0.00}
+  - {name: allowed_amount, type: "NUMERIC(18,2)", required: true, nullable: true, description: Total payer-allowed amount in USD, minimum: 0.00}
+  - {name: paid_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Total posted payment in USD, minimum: 0.00}
+  - {name: patient_responsibility_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Assigned patient responsibility in USD, minimum: 0.00}
+  - {name: adjustment_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Contractual or approved adjustment in USD, minimum: 0.00}
+  - {name: outstanding_balance, type: "NUMERIC(18,2)", required: true, nullable: false, description: Remaining source balance in USD, minimum: 0.00}
+  - {name: currency_code, type: STRING, required: true, nullable: false, description: ISO 4217 currency, allowed_values: [USD]}
+  - {name: clean_claim_flag, type: BOOLEAN, required: true, nullable: false, description: Source-declared clean claim indicator}
+  - {name: first_pass_accepted_flag, type: BOOLEAN, required: true, nullable: false, description: Source-declared first-pass acceptance indicator}
+  - {name: filing_deadline_date, type: DATE, required: true, nullable: true, description: Last permitted initial filing date}
+  - {name: source_updated_at, type: TIMESTAMP, required: true, nullable: false, description: Source record version instant}
+validation_rules:
+  - {id: DQ-CLM-001, severity: critical, disposition: rejected, condition: claim_id patient_id provider_id facility_id payer_id or plan_id is empty}
+  - {id: DQ-CLM-002, severity: critical, disposition: rejected, condition: duplicate natural key exists within the delivery}
+  - {id: DQ-CLM-003, severity: error, disposition: quarantined, condition: service_to_date is before service_from_date or either service date is after submitted_at}
+  - {id: DQ-CLM-004, severity: error, disposition: quarantined, condition: a required provider facility payer plan or diagnosis relationship does not resolve}
+  - {id: DQ-CLM-005, severity: error, disposition: quarantined, condition: any monetary value is negative or currency_code is not USD}
+  - {id: DQ-CLM-006, severity: error, disposition: quarantined, condition: billed_amount differs from paid_amount plus adjustment_amount plus outstanding_balance by more than 0.00}
+  - {id: DQ-CLM-007, severity: error, disposition: quarantined, condition: allowed_amount is present and paid_amount plus patient_responsibility_amount exceeds allowed_amount without a linked reversal}
+  - {id: DQ-CLM-008, severity: error, disposition: quarantined, condition: primary_diagnosis_code fails the active diagnosis reference format or validity interval}
+  - {id: DQ-CLM-009, severity: error, disposition: quarantined, condition: a submitted accepted rejected or denied claim lacks filing_deadline_date}
+  - {id: DQ-CLM-010, severity: error, disposition: quarantined, condition: submission_type is replacement or void and original_claim_id is empty or unresolved}
+reconciliation:
+  record_count: Exact parsed-row equality and disposition equality required
+  amounts:
+    - billed_amount
+    - paid_amount
+    - adjustment_amount
+    - outstanding_balance
+  tolerance_usd: 0.00
+freshness:
+  event_field: source_updated_at
+  maximum_source_age: PT90M
