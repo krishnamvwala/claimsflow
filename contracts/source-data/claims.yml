@@ -25,7 +25,7 @@ synthetic_only: true
 fixture_profile:
   baseline_rows_per_month: 100000
   invalid_fixture_rate: 0.02
-  required_scenarios: [original, replacement, void, duplicate, missing_identity, invalid_dates, missing_reference, eligibility_mismatch, financial_mismatch, missing_deadline]
+  required_scenarios: [original, replacement, void, duplicate, first_response_without_adjudication, inconsistent_first_response, missing_identity, invalid_dates, missing_reference, eligibility_mismatch, financial_mismatch, missing_deadline]
 owners:
   business: Revenue Cycle Operations
   technical: ClaimsFlow Data Engineering
@@ -108,6 +108,8 @@ schema:
   - {name: service_from_date, type: DATE, required: true, nullable: false, description: First service date}
   - {name: service_to_date, type: DATE, required: true, nullable: false, description: Last service date}
   - {name: submitted_at, type: TIMESTAMP, required: true, nullable: false, description: Source submission instant}
+  - {name: first_response_at, type: TIMESTAMP, required: true, nullable: true, description: First clearinghouse or payer acceptance or rejection response instant}
+  - {name: first_response_disposition, type: STRING, required: true, nullable: true, description: First front-door response independent of later adjudication outcome, allowed_values: [accepted, rejected]}
   - {name: adjudicated_at, type: TIMESTAMP, required: true, nullable: true, description: Latest payer adjudication instant}
   - {name: primary_diagnosis_code, type: STRING, required: true, nullable: false, description: Primary diagnosis code}
   - {name: primary_diagnosis_code_system, type: STRING, required: true, nullable: false, description: Primary diagnosis code family, allowed_values: [ICD-10-CM, SYNTHETIC]}
@@ -136,6 +138,8 @@ validation_rules:
   - {id: DQ-CLM-010, severity: error, disposition: quarantined, condition: replacement or void lacks a complete original claim key the key does not resolve within the same source and claim identity or original_submission_sequence is not lower than submission_sequence or an original submission contains any original pointer}
   - {id: DQ-CLM-011, severity: error, disposition: quarantined, condition: linked eligibility response is unresolved has a different patient payer or plan is not confirmed active or does not cover the complete service_from_date through service_to_date interval}
   - {id: DQ-CLM-012, severity: error, disposition: quarantined, condition: patient_paid_amount exceeds patient_responsibility_amount}
+  - {id: DQ-CLM-013, severity: error, disposition: quarantined, condition: exactly one of first_response_at and first_response_disposition is populated instead of both or neither or a non-submitted claim lacks both}
+  - {id: DQ-CLM-014, severity: error, disposition: quarantined, condition: first_pass_accepted_flag disagrees with accepted first_response_disposition first_response_at precedes submitted_at or first_response_at follows adjudicated_at when adjudicated_at is present}
 reconciliation:
   record_count: Exact parsed-row equality and disposition equality required
   amounts:

@@ -1,0 +1,76 @@
+dictionary_version: 1.0.0
+metric_id: MET-REV-001
+slug: recovered_revenue
+name: Recovered revenue
+status: baseline_draft
+description: Incremental USD recovered from favorable appeal decisions in the reporting period.
+requirements: [FR-MET-001, FR-MET-002, FR-MET-003, FR-MET-004, FR-MET-005]
+acceptance_criteria: [AC-MET-001, AC-MET-002, AC-MET-003, AC-MET-004, AC-MET-005]
+business:
+  purpose: Quantify appeal-attributable revenue recovered through completed human denial-management work.
+  decision: Show which payer denial-reason provider facility and appeal-level cohorts generate verified recovery.
+  owner: Revenue Cycle Finance
+  steward: ClaimsFlow Analytics Engineering
+calculation:
+  metric_type: currency
+  unit: USD
+  output_grain: One appeal-decision cohort total and selected dimension intersection
+  formula: sum incremental recovered_amount for favorable decided appeal events
+  numerator:
+    label: Incremental recovered appeal revenue
+    aggregation: sum
+    expression: sum appeals.recovered_amount for latest favorable decided appeal events
+    grain: Appeal event
+    inclusions: [published appeals with outcome overturned or partially_overturned decision_date in cohort and non-null recovered_amount]
+    exclusions: [upheld withdrawn expired pending or undecided appeals, requested amount not actually recovered]
+    null_handling: Null recovered_amount on a favorable decided appeal is invalid and blocks a complete result.
+    field_references: [appeals.source_system, appeals.appeal_id, appeals.decision_date, appeals.outcome, appeals.recovered_amount]
+  denominator:
+    label: Not applicable for an additive currency measure
+    aggregation: none
+    expression: not_applicable
+    grain: not_applicable
+    inclusions: []
+    exclusions: []
+    null_handling: not_applicable
+    field_references: []
+  record_selection:
+    - Select the latest published source_updated_at version for each complete appeal natural key at cutoff.
+    - Treat recovered_amount as incremental for that appeal event not cumulative across appeal levels and reconcile total recovery per denial to denied_amount.
+    - Attribute procedure and diagnosis through the denial's exact line pointer when populated; a claim-level denial has membership in every distinct claim-line value and those overlapping views are not additive.
+  time:
+    mode: period
+    event_field: appeals.decision_date
+    timezone: UTC
+    boundary: start_inclusive_end_exclusive
+    cutoff_rule: Include favorable decisions in period whose latest source version is known by calculation_cutoff_at.
+    restatement_policy: Recompute open periods for 90 days for corrected outcomes or recovered amounts.
+  dimensions:
+    - {name: payer, source_field: denials.payer_id}
+    - {name: provider, source_field: claims.provider_id}
+    - {name: facility, source_field: claims.facility_id}
+    - {name: procedure, source_field: claim-lines.procedure_code}
+    - {name: diagnosis, source_field: claim-lines.diagnosis_codes}
+    - {name: denial_reason, source_field: denials.denial_reason_code}
+    - {name: appeal_level, source_field: appeals.appeal_level}
+    - {name: time, source_field: appeals.decision_date}
+  null_behavior: A valid empty cohort returns 0.00 USD; a favorable decision with null recovery blocks the metric result.
+  reversal_behavior: A corrected latest appeal version replaces the earlier recovery amount and restates the open period rather than adding another recovery.
+  adjustment_behavior: Recovered amount cannot exceed requested amount and cumulative recovery across appeals for one denial cannot exceed denied_amount.
+  precision: {storage_type: "NUMERIC(18,2)", display_decimal_places: 2, rounding_mode: half_away_from_zero, division_by_zero: not_applicable}
+source_dependencies:
+  appeals: [source_system, appeal_id, denial_source_system, denial_id, claim_source_system, claim_id, claim_submission_sequence, appeal_level, appeal_status, decision_date, outcome, requested_amount, recovered_amount, currency_code, source_updated_at, trusted_published_at, processing_status]
+  denials: [source_system, denial_id, claim_source_system, claim_id, claim_submission_sequence, claim_line_number, claim_line_id, payer_id, denial_reason_code, denied_amount, currency_code, source_updated_at, trusted_published_at, processing_status]
+  claims: [source_system, claim_id, submission_sequence, provider_id, facility_id, source_updated_at, trusted_published_at, processing_status]
+  claim-lines: [source_system, claim_id, submission_sequence, line_number, claim_line_id, procedure_code, procedure_code_system, diagnosis_codes, diagnosis_code_system, source_updated_at, trusted_published_at, processing_status]
+validation_rules:
+  - {id: MQ-REV-001, severity: critical, condition: more than one latest appeal version contributes for a complete appeal natural key}
+  - {id: MQ-REV-002, severity: error, condition: favorable decided appeal has null negative or non-USD recovered_amount}
+  - {id: MQ-REV-003, severity: critical, condition: recovered_amount exceeds requested_amount or total incremental recovery for a denial exceeds denied_amount}
+  - {id: MQ-REV-004, severity: critical, condition: mutually exclusive dimensional component sums do not reconcile to exact unfiltered recovery or an overlapping procedure or diagnosis view is presented as additive}
+test_scenarios:
+  - {id: MT-REV-001, category: boundary, given: decisions fall exactly on cohort boundaries, expected: start is included and end is excluded}
+  - {id: MT-REV-002, category: "null", given: favorable decision has null recovered_amount, expected: metric result is blocked}
+  - {id: MT-REV-003, category: reversal, given: recovered amount is corrected in a newer source version, expected: newest amount replaces rather than adds to prior amount}
+  - {id: MT-REV-004, category: dimensional, given: one claim-level recovery joins lines with overlapping diagnoses, expected: each filter view includes recovery once but diagnosis slices are labeled non-additive while mutually exclusive payer slices reconcile exactly}
+  - {id: MT-REV-005, category: empty_cohort, given: no favorable decisions occur, expected: result is 0.00 USD}

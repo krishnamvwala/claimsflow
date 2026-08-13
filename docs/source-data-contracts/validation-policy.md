@@ -43,6 +43,7 @@ A record with no failed rule is `accepted`. If multiple record rules fail, prece
 | DQ-CMN-009 | Undeclared column is present | critical | block_batch until a compatible contract version is approved |
 | DQ-CMN-010 | Required column is absent | critical | block_batch |
 | DQ-CMN-011 | A different delivery contains the same natural key and same contract-declared version discriminator (`source_updated_at`, or `valid_from` for reference data) as an existing row but a different raw payload hash | critical | block_batch; retain both immutable payloads as collision evidence and do not overwrite or publish the new version |
+| DQ-CMN-012 | A published record lacks one immutable `trusted_published_at`, the timestamp precedes `ingested_at`, or it changes after first trusted publication | critical | block_batch; historical metric cutoffs cannot use ambiguous publication evidence |
 
 ## 4. Permitted automatic normalizations
 

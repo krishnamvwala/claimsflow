@@ -1,0 +1,70 @@
+dictionary_version: 1.0.0
+metric_id: MET-FPA-001
+slug: first_pass_acceptance_rate
+name: First-pass acceptance rate
+status: baseline_draft
+description: Percentage of original claims whose first clearinghouse or payer response accepted them into processing.
+requirements: [FR-MET-001, FR-MET-002, FR-MET-004, FR-MET-005]
+acceptance_criteria: [AC-MET-001, AC-MET-002, AC-MET-004, AC-MET-005]
+business:
+  purpose: Separate front-door submission acceptance from later adjudication outcomes such as payment or denial.
+  decision: Detect preventable submission-format and payer-edit failures requiring billing workflow changes.
+  owner: Billing Operations
+  steward: ClaimsFlow Analytics Engineering
+calculation:
+  metric_type: ratio
+  unit: percent
+  output_grain: One result per original-submission cohort and selected dimension intersection
+  formula: 100 * first_pass_accepted_original_claims / original_claims_with_first_response
+  numerator:
+    label: First-pass accepted original claims
+    aggregation: count_distinct
+    expression: distinct source_system claim_id where submission_sequence is 1 first_response_disposition is accepted and first_pass_accepted_flag is true
+    grain: Claim identity represented by original submission
+    inclusions: [denominator-eligible originals with first_response_disposition accepted and first_pass_accepted_flag true]
+    exclusions: [original claims whose first_response_disposition is rejected]
+    null_handling: Required first_pass_accepted_flag cannot be null in trusted data.
+    field_references: [claims.source_system, claims.claim_id, claims.submission_sequence, claims.first_response_at, claims.first_response_disposition, claims.first_pass_accepted_flag]
+  denominator:
+    label: Original claims with a first response
+    aggregation: count_distinct
+    expression: distinct source_system claim_id where submission_sequence is 1
+    grain: Claim identity
+    inclusions: [published originals with both first_response_at and first_response_disposition present]
+    exclusions: [submitted or voided claims and later replacement submissions]
+    null_handling: Null first_response_at or disposition means no observed first response and is excluded even if later adjudication fields are populated inconsistently.
+    field_references: [claims.source_system, claims.claim_id, claims.submission_sequence, claims.submission_type, claims.first_response_at, claims.first_response_disposition]
+  record_selection:
+    - Select only submission_type original and submission_sequence 1.
+    - Use the latest published source version of that natural key at calculation cutoff; do not substitute later replacement outcomes.
+  time:
+    mode: period
+    event_field: claims.submitted_at
+    timezone: UTC
+    boundary: start_inclusive_end_exclusive
+    cutoff_rule: Cohort on original submitted_at and require first_response_at plus its trusted source version to be known by calculation_cutoff_at; later adjudication is not required.
+    restatement_policy: Recompute open periods for 30 days for late first-response evidence.
+  dimensions:
+    - {name: payer, source_field: claims.payer_id}
+    - {name: provider, source_field: claims.provider_id}
+    - {name: facility, source_field: claims.facility_id}
+    - {name: diagnosis, source_field: claims.primary_diagnosis_code}
+    - {name: time, source_field: claims.submitted_at}
+  null_behavior: Return null with not_applicable status when the denominator is zero.
+  reversal_behavior: Later denial payment replacement or void does not change the recorded first-pass acceptance outcome.
+  adjustment_behavior: Financial activity does not affect first-pass acceptance.
+  precision: {storage_type: "NUMERIC(18,6)", display_decimal_places: 2, rounding_mode: half_away_from_zero, division_by_zero: "null"}
+source_dependencies:
+  claims: [source_system, claim_id, submission_sequence, payer_id, provider_id, facility_id, primary_diagnosis_code, primary_diagnosis_code_system, claim_status, submission_type, submitted_at, first_response_at, first_response_disposition, adjudicated_at, first_pass_accepted_flag, source_updated_at, trusted_published_at, processing_status]
+validation_rules:
+  - {id: MQ-FPA-001, severity: critical, condition: numerator claim identities are not a subset of denominator identities}
+  - {id: MQ-FPA-002, severity: error, condition: first_response_disposition and first_pass_accepted_flag disagree}
+  - {id: MQ-FPA-003, severity: error, condition: a non-original or non-sequence-one claim enters the cohort}
+  - {id: MQ-FPA-004, severity: critical, condition: a dimension join changes the unfiltered distinct claim count}
+  - {id: MQ-FPA-005, severity: critical, condition: result is below 0 or above 100 when denominator is positive}
+test_scenarios:
+  - {id: MT-FPA-001, category: boundary, given: submissions occur at both cohort boundaries, expected: start is included and end is excluded}
+  - {id: MT-FPA-002, category: "null", given: accepted original has first_response_at but no adjudicated_at, expected: original enters numerator and denominator because adjudication is not required}
+  - {id: MT-FPA-003, category: reversal, given: accepted original is later voided, expected: historical first-pass result remains accepted}
+  - {id: MT-FPA-004, category: dimensional, given: one claim joins multiple later events, expected: it is counted once in its original dimensions}
+  - {id: MT-FPA-005, category: zero_denominator, given: cohort has no first responses, expected: result is null with not_applicable status}

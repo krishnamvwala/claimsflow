@@ -114,6 +114,16 @@ results << assert_failure("missing cross-delivery collision policy", "DQ-CMN-011
   mutate_validation_policy(root) { |policy| policy.sub("| DQ-CMN-011 |", "| DQ-CMN-099 |") }
 end
 
+results << assert_failure("missing trusted-publication policy", "DQ-CMN-012 must enforce immutable trusted-publication time after ingestion") do |root|
+  mutate_validation_policy(root) { |policy| policy.sub("| DQ-CMN-012 |", "| DQ-CMN-099 |") }
+end
+
+results << assert_failure("missing first-response consistency rule", "must enforce complete and consistent first-response evidence") do |root|
+  mutate_contract(root, "claims.yml") do |contract|
+    contract["validation_rules"].reject! { |rule| rule["id"] == "DQ-CLM-014" }
+  end
+end
+
 unless results.all?
   warn "Source contract validator tests failed"
   exit 1

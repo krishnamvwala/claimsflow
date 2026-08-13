@@ -305,7 +305,10 @@ This requirements document is ready for baseline approval when:
 
 ## 14. Next Phase 0 artifacts
 
-1. Acceptance-criteria matrix.
-2. Source-data contracts.
-3. Metric dictionary.
-4. Initial architecture decision records.
+Completed Phase 0 artifacts:
+
+1. [Acceptance-criteria matrix](acceptance-criteria.md).
+2. [Source-data contracts](source-data-contracts/README.md).
+3. [Governed metric dictionary](metric-dictionary/README.md).
+
+Next: create the initial architecture decision records for BigQuery, dbt, Airflow, Python, Power BI, security, and deployment boundaries.

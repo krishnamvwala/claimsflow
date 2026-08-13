@@ -1,0 +1,69 @@
+dictionary_version: 1.0.0
+metric_id: MET-ARB-001
+slug: outstanding_balance
+name: Outstanding balance
+status: baseline_draft
+description: Total eligible claim balance remaining at the end of an as-of date in USD.
+requirements: [FR-MET-001, FR-MET-002, FR-MET-004, FR-MET-005]
+acceptance_criteria: [AC-MET-001, AC-MET-002, AC-MET-004, AC-MET-005]
+business:
+  purpose: Quantify current collectible claim exposure without double-counting claim headers and lines or superseded submissions.
+  decision: Direct follow-up toward payer provider and facility cohorts carrying the largest unresolved balance.
+  owner: Revenue Cycle Finance
+  steward: ClaimsFlow Analytics Engineering
+calculation:
+  metric_type: currency
+  unit: USD
+  output_grain: One daily as-of balance and selected dimension intersection
+  formula: sum current_eligible_claim_identity_outstanding_balance
+  numerator:
+    label: Current eligible claim outstanding balance
+    aggregation: sum
+    expression: sum claims.outstanding_balance after current claim-identity selection
+    grain: Current claim identity as of calculation date
+    inclusions: [latest published claim identity with status submitted accepted denied partially_paid or paid]
+    exclusions: [superseded submissions, current voided or rejected identities, claim-line balances]
+    null_handling: Null outstanding balance is invalid upstream and never treated as zero.
+    field_references: [claims.source_system, claims.claim_id, claims.submission_sequence, claims.outstanding_balance, claims.claim_status]
+  denominator:
+    label: Not applicable for an additive currency measure
+    aggregation: none
+    expression: not_applicable
+    grain: not_applicable
+    inclusions: []
+    exclusions: []
+    null_handling: not_applicable
+    field_references: []
+  record_selection:
+    - For each source_system and claim_id choose the highest non-rejected submission_sequence known by cutoff then its latest source_updated_at version; a rejected replacement does not suppress the preceding valid submission.
+    - Aggregate claim headers only; claim-line balances are reconciliation evidence and must not be added again.
+  time:
+    mode: as_of
+    event_field: claims.source_updated_at
+    timezone: UTC
+    boundary: as_of_date_end_inclusive
+    cutoff_rule: Use source versions known through 23:59:59.999999Z on as_of_date.
+    restatement_policy: Historical daily snapshots are immutable after 90 days unless an audited backfill restates them.
+  dimensions:
+    - {name: payer, source_field: claims.payer_id}
+    - {name: provider, source_field: claims.provider_id}
+    - {name: facility, source_field: claims.facility_id}
+    - {name: diagnosis, source_field: claims.primary_diagnosis_code}
+    - {name: time, source_field: claims.source_updated_at}
+  null_behavior: A valid empty cohort returns 0.00 USD; any null source balance fails metric validation.
+  reversal_behavior: A replacement supersedes prior submissions and a current void removes the full claim identity from the balance.
+  adjustment_behavior: Payments and adjustments affect this metric only through the source-reconciled net outstanding_balance field.
+  precision: {storage_type: "NUMERIC(18,2)", display_decimal_places: 2, rounding_mode: half_away_from_zero, division_by_zero: not_applicable}
+source_dependencies:
+  claims: [source_system, claim_id, submission_sequence, payer_id, provider_id, facility_id, primary_diagnosis_code, primary_diagnosis_code_system, claim_status, outstanding_balance, currency_code, source_updated_at, trusted_published_at, processing_status]
+validation_rules:
+  - {id: MQ-ARB-001, severity: critical, condition: more than one current claim row exists per source_system and claim_id at cutoff}
+  - {id: MQ-ARB-002, severity: critical, condition: claim-line and claim-header balances are both included}
+  - {id: MQ-ARB-003, severity: error, condition: an included balance is null negative or non-USD}
+  - {id: MQ-ARB-004, severity: critical, condition: dimensional component sums do not reconcile to the unfiltered balance at exact precision}
+test_scenarios:
+  - {id: MT-ARB-001, category: boundary, given: source versions occur immediately before and after as_of cutoff, expected: only the version known by cutoff is selected}
+  - {id: MT-ARB-002, category: "null", given: included claim balance is null, expected: validation fails rather than returning a partial total}
+  - {id: MT-ARB-003, category: reversal, given: latest claim submission is a void, expected: the claim identity contributes zero}
+  - {id: MT-ARB-004, category: dimensional, given: claims span multiple dimensions, expected: exclusive slices reconcile to the unfiltered exact total}
+  - {id: MT-ARB-005, category: empty_cohort, given: no eligible current claims exist, expected: result is 0.00 USD}

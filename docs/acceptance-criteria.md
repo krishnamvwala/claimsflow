@@ -229,4 +229,4 @@ This artifact is ready for baseline approval when:
 
 ## 19. Next Phase 0 artifact
 
-Create the governed metric dictionary for denial rate, clean-claim rate, first-pass acceptance rate, days in accounts receivable, outstanding balance, net collection rate, appeal success rate, and recovered revenue.
+Create the initial architecture decision records for BigQuery, dbt, Airflow, Python, Power BI, security, and deployment boundaries. The governed metric dictionary is maintained in [`docs/metric-dictionary`](metric-dictionary/README.md).
