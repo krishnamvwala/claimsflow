@@ -1,0 +1,71 @@
+dictionary_version: 1.0.0
+metric_id: MET-CLN-001
+slug: clean_claim_rate
+name: Clean-claim rate
+status: baseline_draft
+description: Percentage of adjudicated original claims accepted without rejection denial correction or resubmission.
+requirements: [FR-MET-001, FR-MET-002, FR-MET-004, FR-MET-005]
+acceptance_criteria: [AC-MET-001, AC-MET-002, AC-MET-004, AC-MET-005]
+business:
+  purpose: Measure the share of original claims that require no corrective revenue-cycle work before successful adjudication.
+  decision: Target front-end claim-quality improvements and monitor whether correction workload is falling.
+  owner: Revenue Cycle Operations
+  steward: ClaimsFlow Analytics Engineering
+calculation:
+  metric_type: ratio
+  unit: percent
+  output_grain: One result per original-submission cohort and selected dimension intersection
+  formula: 100 * clean_original_claims / adjudicated_original_claims
+  numerator:
+    label: Clean original claims
+    aggregation: count_distinct
+    expression: distinct source_system claim_id where clean_claim_flag and first_pass_accepted_flag are true and no denial correction or void exists
+    grain: Claim identity represented by submission_sequence 1
+    inclusions: [denominator-eligible original claims with claim_status in accepted partially_paid or paid and both quality flags true]
+    exclusions: [claims with any linked denial, rejected original response, later replacement, or later void known by the calculation cutoff]
+    null_handling: Required boolean flags cannot be null; invalid nulls are excluded by trusted-publication controls.
+    field_references: [claims.source_system, claims.claim_id, claims.submission_sequence, claims.original_claim_source_system, claims.original_claim_id, claims.original_submission_sequence, claims.submission_type, claims.clean_claim_flag, claims.first_pass_accepted_flag, claims.claim_status, denials.claim_source_system, denials.claim_id, denials.claim_submission_sequence]
+  denominator:
+    label: Adjudicated original claims
+    aggregation: count_distinct
+    expression: distinct source_system claim_id for submission_sequence 1
+    grain: Claim identity
+    inclusions: [published original claims with adjudicated_at present and status in accepted rejected denied partially_paid or paid]
+    exclusions: [submitted or voided originals, quarantine and rejection records]
+    null_handling: Null adjudicated_at is ineligible.
+    field_references: [claims.source_system, claims.claim_id, claims.submission_sequence, claims.submission_type, claims.adjudicated_at, claims.claim_status]
+  record_selection:
+    - Select the latest published version of original submission sequence 1 as of the calculation cutoff.
+    - Anti-join any published replacement void or denial linked to the original claim identity before marking a claim clean.
+  time:
+    mode: period
+    event_field: claims.submitted_at
+    timezone: UTC
+    boundary: start_inclusive_end_exclusive
+    cutoff_rule: Cohort by original submitted_at and evaluate all correction and denial evidence known at calculation_cutoff_at.
+    restatement_policy: Recompute open periods for 90 days because later corrections or denials can remove clean status.
+  dimensions:
+    - {name: payer, source_field: claims.payer_id}
+    - {name: provider, source_field: claims.provider_id}
+    - {name: facility, source_field: claims.facility_id}
+    - {name: diagnosis, source_field: claims.primary_diagnosis_code}
+    - {name: time, source_field: claims.submitted_at}
+  null_behavior: Return null with not_applicable status when the denominator is zero.
+  reversal_behavior: A void linked to an original claim removes that claim from the clean numerator but not from the historical adjudicated denominator.
+  adjustment_behavior: Payment and adjustment activity does not change clean-claim classification.
+  precision: {storage_type: "NUMERIC(18,6)", display_decimal_places: 2, rounding_mode: half_away_from_zero, division_by_zero: "null"}
+source_dependencies:
+  claims: [source_system, claim_id, submission_sequence, original_claim_source_system, original_claim_id, original_submission_sequence, payer_id, provider_id, facility_id, primary_diagnosis_code, primary_diagnosis_code_system, claim_status, submission_type, submitted_at, adjudicated_at, clean_claim_flag, first_pass_accepted_flag, source_updated_at, trusted_published_at, processing_status]
+  denials: [source_system, denial_id, claim_source_system, claim_id, claim_submission_sequence, source_updated_at, trusted_published_at, processing_status]
+validation_rules:
+  - {id: MQ-CLN-001, severity: critical, condition: numerator claim identities are not a subset of denominator identities}
+  - {id: MQ-CLN-002, severity: error, condition: a numerator claim has a denial replacement or void known at calculation cutoff}
+  - {id: MQ-CLN-003, severity: error, condition: clean_claim_flag and first_pass_accepted_flag disagree for a numerator claim}
+  - {id: MQ-CLN-004, severity: critical, condition: a dimension join changes the unfiltered claim-identity count}
+  - {id: MQ-CLN-005, severity: critical, condition: result is below 0 or above 100 when denominator is positive}
+test_scenarios:
+  - {id: MT-CLN-001, category: boundary, given: originals submitted exactly at cohort boundaries, expected: start is included and end is excluded}
+  - {id: MT-CLN-002, category: "null", given: original has null adjudicated_at, expected: claim is ineligible}
+  - {id: MT-CLN-003, category: reversal, given: initially clean claim is later voided, expected: claim leaves numerator after restatement}
+  - {id: MT-CLN-004, category: dimensional, given: claims share payer and provider dimensions, expected: slices sum to the unfiltered distinct cohort}
+  - {id: MT-CLN-005, category: zero_denominator, given: cohort has no adjudicated originals, expected: result is null with not_applicable status}

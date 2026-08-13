@@ -42,6 +42,7 @@ ENVELOPE_TYPES = {
   "source_record_id" => "STRING",
   "source_extract_at" => "TIMESTAMP",
   "ingested_at" => "TIMESTAMP",
+  "trusted_published_at" => "TIMESTAMP",
   "contract_id" => "STRING",
   "contract_version" => "STRING",
   "raw_payload_hash_sha256" => "STRING",
@@ -525,6 +526,10 @@ reference_rules = contract_records.find { |record| record[:contract]["source_fam
 required_effective_rules = Set.new(%w[DQ-REF-003 DQ-REF-004 DQ-REF-005])
 errors << "reference-data.yml must enforce valid intervals, non-overlap, and one current version" unless required_effective_rules.subset?(reference_rules)
 
+claim_rules = contract_records.find { |record| record[:contract]["source_family"] == "claims" }&.dig(:contract, "validation_rules").to_a.map { |rule| rule["id"] }.to_set
+required_first_response_rules = Set.new(%w[DQ-CLM-013 DQ-CLM-014])
+errors << "claims.yml must enforce complete and consistent first-response evidence" unless required_first_response_rules.subset?(claim_rules)
+
 validation_policy = File.read(File.join(ROOT, "docs", "source-data-contracts", "validation-policy.md"))
 duplicate_policy = validation_policy.lines.find { |line| line.start_with?("| DQ-CMN-004 |") }.to_s
 unless duplicate_policy.match?(/\| warning \| duplicate_no_op(?:\s|;|\|)/) && duplicate_policy.match?(/no (?:record processing|records processed)/i)
@@ -533,6 +538,10 @@ end
 collision_policy = validation_policy.lines.find { |line| line.start_with?("| DQ-CMN-011 |") }.to_s
 unless collision_policy.match?(/same natural key/i) && collision_policy.match?(/same.*version discriminator/i) && collision_policy.match?(/different.*payload hash/i) && collision_policy.match?(/\| critical \| block_batch(?:\s|;|\|)/)
   errors << "validation policy DQ-CMN-011 must block same-key same-version different-payload collisions"
+end
+publication_policy = validation_policy.lines.find { |line| line.start_with?("| DQ-CMN-012 |") }.to_s
+unless publication_policy.match?(/trusted_published_at/) && publication_policy.match?(/immutable/i) && publication_policy.match?(/ingested_at/) && publication_policy.match?(/\| critical \| block_batch(?:\s|;|\|)/)
+  errors << "validation policy DQ-CMN-012 must enforce immutable trusted-publication time after ingestion"
 end
 
 documentation_paths = [

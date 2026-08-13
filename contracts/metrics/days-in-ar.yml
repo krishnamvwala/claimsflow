@@ -1,0 +1,69 @@
+dictionary_version: 1.0.0
+metric_id: MET-DAR-001
+slug: days_in_accounts_receivable
+name: Days in accounts receivable
+status: baseline_draft
+description: Ending eligible accounts receivable divided by average daily gross charges over the preceding 90 UTC calendar days.
+requirements: [FR-MET-001, FR-MET-002, FR-MET-004, FR-MET-005]
+acceptance_criteria: [AC-MET-001, AC-MET-002, AC-MET-004, AC-MET-005]
+business:
+  purpose: Express current outstanding receivables in equivalent days of recent gross charge production.
+  decision: Monitor collection-cycle pressure and investigate payer provider or facility cohorts with rising days in A/R.
+  owner: Revenue Cycle Finance
+  steward: ClaimsFlow Analytics Engineering
+calculation:
+  metric_type: duration
+  unit: days
+  output_grain: One daily as-of result and selected dimension intersection
+  formula: ending_eligible_outstanding_balance / (eligible_gross_charges_previous_90_days / 90)
+  numerator:
+    label: Ending eligible outstanding balance
+    aggregation: sum
+    expression: sum claims.outstanding_balance from the current claim-identity snapshot
+    grain: Current claim identity as of calculation date
+    inclusions: [latest published non-void non-rejected claim identity with outstanding_balance greater than or equal to zero]
+    exclusions: [superseded submissions, voided or rejected current claims]
+    null_handling: Null outstanding_balance is invalid upstream and never treated as zero.
+    field_references: [claims.source_system, claims.claim_id, claims.submission_sequence, claims.outstanding_balance, claims.claim_status]
+  denominator:
+    label: Average daily gross charges over 90 days
+    aggregation: sum_divided_by_constant
+    expression: sum current claims.billed_amount for identities originally submitted during the 90-day lookback divided by 90
+    grain: Current claim identity assigned to its original submitted_at date
+    inclusions: [same current eligible identity population whose original submitted_at UTC date is from as_of_date minus 89 days through as_of_date]
+    exclusions: [voided or rejected current identities, additional replacement submissions as separate charges]
+    null_handling: Null billed_amount or missing original submission linkage is invalid and excluded with quality evidence.
+    field_references: [claims.source_system, claims.claim_id, claims.submission_sequence, claims.submitted_at, claims.billed_amount, claims.claim_status]
+  record_selection:
+    - For each source_system and claim_id choose the highest non-rejected submission_sequence known at the end of as_of_date then its latest source_updated_at version; a rejected replacement does not suppress the preceding valid submission.
+    - Resolve the identity to submission_sequence 1 to assign original submitted_at without counting replacement submissions as new gross charges.
+  time:
+    mode: as_of
+    event_field: claims.source_updated_at
+    timezone: UTC
+    boundary: as_of_date_end_inclusive
+    cutoff_rule: Use only versions known through 23:59:59.999999Z on as_of_date; gross-charge lookback contains exactly 90 UTC dates.
+    restatement_policy: Historical as-of results are immutable after 90 days unless an audited backfill explicitly restates them.
+  dimensions:
+    - {name: payer, source_field: claims.payer_id}
+    - {name: provider, source_field: claims.provider_id}
+    - {name: facility, source_field: claims.facility_id}
+    - {name: time, source_field: claims.source_updated_at}
+  null_behavior: Return null with not_applicable status when 90-day gross charges are zero; never divide by zero.
+  reversal_behavior: Replacement and void submissions alter the current identity snapshot; a void removes its identity from both components after its effective source version.
+  adjustment_behavior: Adjustments do not reduce gross charges in the denominator and affect the numerator only through the source-reconciled outstanding balance.
+  precision: {storage_type: "NUMERIC(18,6)", display_decimal_places: 1, rounding_mode: half_away_from_zero, division_by_zero: "null"}
+source_dependencies:
+  claims: [source_system, claim_id, submission_sequence, original_claim_source_system, original_claim_id, original_submission_sequence, payer_id, provider_id, facility_id, claim_status, submission_type, submitted_at, billed_amount, outstanding_balance, currency_code, source_updated_at, trusted_published_at, processing_status]
+validation_rules:
+  - {id: MQ-DAR-001, severity: critical, condition: more than one current claim row exists per source_system and claim_id at as_of cutoff}
+  - {id: MQ-DAR-002, severity: error, condition: replacement or void identity cannot resolve to its original submission date}
+  - {id: MQ-DAR-003, severity: critical, condition: gross-charge lookback spans other than exactly 90 UTC dates}
+  - {id: MQ-DAR-004, severity: error, condition: billed or outstanding amount is negative or non-USD}
+  - {id: MQ-DAR-005, severity: critical, condition: a positive result is emitted when average daily gross charges are zero}
+test_scenarios:
+  - {id: MT-DAR-001, category: boundary, given: charges occur 89 and 90 days before as_of_date, expected: day 89 is included and day 90 is excluded}
+  - {id: MT-DAR-002, category: "null", given: current claim has null balance, expected: claim is excluded with quality evidence rather than coerced to zero}
+  - {id: MT-DAR-003, category: reversal, given: original claim is voided before as_of cutoff, expected: identity contributes to neither component}
+  - {id: MT-DAR-004, category: dimensional, given: current claims span two payers, expected: payer components reconcile exactly to unfiltered components}
+  - {id: MT-DAR-005, category: zero_denominator, given: eligible 90-day gross charges equal zero, expected: result is null with not_applicable status}

@@ -1,0 +1,43 @@
+name: Metric dictionary validation
+
+on:
+  pull_request:
+    paths:
+      - "README.md"
+      - "contracts/metrics/**"
+      - "contracts/source-data/**"
+      - "docs/acceptance-criteria.md"
+      - "docs/metric-dictionary/**"
+      - "docs/requirements.md"
+      - "scripts/validate_metric_dictionary.rb"
+      - "scripts/test_metric_dictionary_validator.rb"
+      - ".github/workflows/metric-dictionary.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "README.md"
+      - "contracts/metrics/**"
+      - "contracts/source-data/**"
+      - "docs/acceptance-criteria.md"
+      - "docs/metric-dictionary/**"
+      - "docs/requirements.md"
+      - "scripts/validate_metric_dictionary.rb"
+      - "scripts/test_metric_dictionary_validator.rb"
+      - ".github/workflows/metric-dictionary.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+      - name: Validate governed metric dictionary
+        run: ruby scripts/validate_metric_dictionary.rb
+      - name: Test validator failure cases
+        run: ruby scripts/test_metric_dictionary_validator.rb

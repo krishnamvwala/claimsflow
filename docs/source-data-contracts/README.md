@@ -79,12 +79,13 @@ Source files do not supply the following fields. ClaimsFlow adds them from the v
 | `source_record_id` | STRING | Deterministic value built from the contract's declared source-record fields |
 | `source_extract_at` | TIMESTAMP | UTC source extract time parsed from delivery metadata |
 | `ingested_at` | TIMESTAMP | UTC time the raw row was registered |
+| `trusted_published_at` | TIMESTAMP | Immutable first UTC instant when this exact source version became eligible for trusted metrics; null until successful publication |
 | `contract_id` | STRING | Immutable contract identifier from this registry |
 | `contract_version` | STRING | Semantic version used to parse the row |
 | `raw_payload_hash_sha256` | STRING | Stable hash of the canonical source-shaped row |
 | `processing_status` | STRING | `registered`, `validated`, `published`, `quarantined`, `rejected`, `failed`, or delivery-level `duplicate_no_op` |
 
-`(batch_id, source_row_number)` must be unique. Every raw and trusted record must retain a non-null path through these fields to exactly one registered delivery and original source row. Raw payload values and hashes are immutable; verified corrections create new audit evidence and never overwrite raw evidence.
+`(batch_id, source_row_number)` must be unique. Every raw and trusted record must retain a non-null path through these fields to exactly one registered delivery and original source row. Raw payload values and hashes are immutable; verified corrections create new audit evidence and never overwrite raw evidence. A published row has exactly one immutable `trusted_published_at` not earlier than `ingested_at`; historical calculations use that timestamp to decide what evidence was knowable at their cutoff.
 
 ## 5. Type system
 
@@ -160,4 +161,4 @@ This artifact is ready for baseline approval when:
 
 ## 11. Next Phase 0 artifact
 
-Create the governed metric dictionary for denial rate, clean-claim rate, first-pass acceptance rate, days in accounts receivable, outstanding balance, net collection rate, appeal success rate, and recovered revenue.
+Create the initial architecture decision records for BigQuery, dbt, Airflow, Python, Power BI, security, and deployment boundaries. The governed metric dictionary is maintained in the [metric-dictionary documentation](../metric-dictionary/README.md).

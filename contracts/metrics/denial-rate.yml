@@ -1,0 +1,74 @@
+dictionary_version: 1.0.0
+metric_id: MET-DEN-001
+slug: denial_rate
+name: Denial rate
+status: baseline_draft
+description: Percentage of adjudicated claim submissions that have at least one trusted denial event.
+requirements: [FR-MET-001, FR-MET-002, FR-MET-003, FR-MET-004, FR-MET-005]
+acceptance_criteria: [AC-MET-001, AC-MET-002, AC-MET-003, AC-MET-004, AC-MET-005]
+business:
+  purpose: Show how often payer-adjudicated claim submissions experience a denial and where prevention work should focus.
+  decision: Prioritize payer provider facility procedure diagnosis and denial-reason cohorts for human investigation.
+  owner: Revenue Cycle Operations
+  steward: ClaimsFlow Analytics Engineering
+calculation:
+  metric_type: ratio
+  unit: percent
+  output_grain: One result per adjudication cohort and selected dimension intersection
+  formula: 100 * denied_adjudicated_claim_submissions / adjudicated_claim_submissions
+  numerator:
+    label: Denied adjudicated claim submissions
+    aggregation: count_distinct
+    expression: distinct source_system claim_id submission_sequence with one or more trusted linked denial records
+    grain: Claim submission
+    inclusions: [denominator-eligible claim submissions with at least one published denial linked by complete claim key]
+    exclusions: [duplicate denial events after collapsing to the distinct claim-submission key]
+    null_handling: A missing denial relationship is not a denial; unresolved required relationships are excluded before metric calculation.
+    field_references: [claims.source_system, claims.claim_id, claims.submission_sequence, denials.claim_source_system, denials.claim_id, denials.claim_submission_sequence]
+  denominator:
+    label: Adjudicated claim submissions
+    aggregation: count_distinct
+    expression: distinct source_system claim_id submission_sequence
+    grain: Claim submission
+    inclusions: [published claims with adjudicated_at present and claim_status in accepted denied partially_paid or paid]
+    exclusions: [submitted rejected or voided claims, quarantined or rejected source records]
+    null_handling: Null adjudicated_at is ineligible rather than coerced to a date.
+    field_references: [claims.source_system, claims.claim_id, claims.submission_sequence, claims.adjudicated_at, claims.claim_status]
+  record_selection:
+    - Use the latest published source_updated_at version for each complete claim natural key at the calculation cutoff.
+    - Collapse denial joins and all dimensional semi-joins to one row per complete claim-submission key before counting.
+    - Attribute a line-specific denial only to its exact claim line; when both denial line pointers are null attribute the claim-level denial to each distinct line member for filter membership without making those slices additive.
+  time:
+    mode: period
+    event_field: claims.adjudicated_at
+    timezone: UTC
+    boundary: start_inclusive_end_exclusive
+    cutoff_rule: Include source versions known at calculation_cutoff_at; late denials can restate an open cohort.
+    restatement_policy: Recompute open periods for 90 days and retain metric definition version plus calculation timestamp.
+  dimensions:
+    - {name: payer, source_field: claims.payer_id}
+    - {name: provider, source_field: claims.provider_id}
+    - {name: facility, source_field: claims.facility_id}
+    - {name: procedure, source_field: claim-lines.procedure_code}
+    - {name: diagnosis, source_field: claim-lines.diagnosis_codes}
+    - {name: time, source_field: claims.adjudicated_at}
+  null_behavior: Return null with not_applicable status when the denominator is zero; never return zero for an empty cohort.
+  reversal_behavior: A later overturned denial remains evidence that the claim was denied; denial outcome changes do not remove it from the numerator.
+  adjustment_behavior: Financial adjustments do not change claim counts.
+  precision: {storage_type: "NUMERIC(18,6)", display_decimal_places: 2, rounding_mode: half_away_from_zero, division_by_zero: "null"}
+source_dependencies:
+  claims: [source_system, claim_id, submission_sequence, payer_id, provider_id, facility_id, adjudicated_at, claim_status, source_updated_at, trusted_published_at, processing_status]
+  claim-lines: [source_system, claim_id, submission_sequence, line_number, claim_line_id, procedure_code, procedure_code_system, diagnosis_codes, diagnosis_code_system, source_updated_at, trusted_published_at, processing_status]
+  denials: [source_system, denial_id, claim_source_system, claim_id, claim_submission_sequence, claim_line_number, claim_line_id, source_updated_at, trusted_published_at, processing_status]
+validation_rules:
+  - {id: MQ-DEN-001, severity: critical, condition: numerator claim keys are not a subset of denominator claim keys}
+  - {id: MQ-DEN-002, severity: critical, condition: dimensional joins change the unfiltered distinct claim-submission count}
+  - {id: MQ-DEN-003, severity: error, condition: adjudicated_at is null or outside the requested half-open cohort}
+  - {id: MQ-DEN-004, severity: error, condition: an unresolved denial-to-claim relationship enters the numerator}
+  - {id: MQ-DEN-005, severity: critical, condition: result is below 0 or above 100 when denominator is positive}
+test_scenarios:
+  - {id: MT-DEN-001, category: boundary, given: adjudication at start and end instants, expected: start is included and end is excluded}
+  - {id: MT-DEN-002, category: "null", given: claim has null adjudicated_at, expected: claim is excluded from numerator and denominator}
+  - {id: MT-DEN-003, category: reversal, given: denied claim is later overturned, expected: claim remains one denied claim submission}
+  - {id: MT-DEN-004, category: dimensional, given: one line-specific denial and one claim-level denial span multiple lines and diagnoses, expected: exact-line attribution is used when present and each claim-level filter slice counts the claim once}
+  - {id: MT-DEN-005, category: zero_denominator, given: cohort has no adjudicated claims, expected: result is null with not_applicable status}

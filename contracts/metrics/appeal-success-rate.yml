@@ -1,0 +1,77 @@
+dictionary_version: 1.0.0
+metric_id: MET-APS-001
+slug: appeal_success_rate
+name: Appeal success rate
+status: baseline_draft
+description: Percentage of decided appeal events that are overturned or partially overturned.
+requirements: [FR-MET-001, FR-MET-002, FR-MET-003, FR-MET-004, FR-MET-005]
+acceptance_criteria: [AC-MET-001, AC-MET-002, AC-MET-003, AC-MET-004, AC-MET-005]
+business:
+  purpose: Measure how often completed human-filed appeals achieve a favorable payer outcome.
+  decision: Compare appeal effectiveness by payer denial reason provider facility and appeal level.
+  owner: Denial Management
+  steward: ClaimsFlow Analytics Engineering
+calculation:
+  metric_type: ratio
+  unit: percent
+  output_grain: One appeal-decision cohort and selected dimension intersection
+  formula: 100 * favorable_decided_appeals / decided_appeals
+  numerator:
+    label: Favorable decided appeals
+    aggregation: count_distinct
+    expression: distinct source_system appeal_id with outcome overturned or partially_overturned
+    grain: Appeal event
+    inclusions: [denominator-eligible appeals with outcome overturned or partially_overturned]
+    exclusions: [upheld withdrawn expired pending draft or unfiled appeals]
+    null_handling: Null outcome is ineligible and invalid for a decided appeal.
+    field_references: [appeals.source_system, appeals.appeal_id, appeals.decision_date, appeals.outcome]
+  denominator:
+    label: Decided appeals
+    aggregation: count_distinct
+    expression: distinct source_system appeal_id with outcome overturned partially_overturned or upheld
+    grain: Appeal event
+    inclusions: [published human-filed appeals with decision_date and one final adjudicated outcome]
+    exclusions: [withdrawn outcomes and non-decided workflow states]
+    null_handling: Null decision_date or outcome excludes the event and raises consistency evidence when status is decided.
+    field_references: [appeals.source_system, appeals.appeal_id, appeals.appeal_status, appeals.filed_at, appeals.decision_date, appeals.outcome]
+  record_selection:
+    - Select the latest published source_updated_at version of each appeal natural key at cutoff.
+    - Join each appeal to exactly one denial and claim through complete keys before dimensions are applied.
+    - Attribute procedure and diagnosis through the denial's exact line pointer when populated; a claim-level denial with both line pointers null has membership in each distinct claim-line value and those overlapping slices are not additive.
+  time:
+    mode: period
+    event_field: appeals.decision_date
+    timezone: UTC
+    boundary: start_inclusive_end_exclusive
+    cutoff_rule: Include final decisions whose decision_date is in period and whose latest version is known by calculation_cutoff_at.
+    restatement_policy: Recompute open periods for 90 days when a payer corrects a decision outcome.
+  dimensions:
+    - {name: payer, source_field: denials.payer_id}
+    - {name: provider, source_field: claims.provider_id}
+    - {name: facility, source_field: claims.facility_id}
+    - {name: procedure, source_field: claim-lines.procedure_code}
+    - {name: diagnosis, source_field: claim-lines.diagnosis_codes}
+    - {name: denial_reason, source_field: denials.denial_reason_code}
+    - {name: appeal_level, source_field: appeals.appeal_level}
+    - {name: time, source_field: appeals.decision_date}
+  null_behavior: Return null with not_applicable status when no appeals were decided in the cohort.
+  reversal_behavior: A corrected latest appeal outcome replaces the earlier outcome through source-version selection and restates the open cohort.
+  adjustment_behavior: Recovery amount does not weight appeal counts; partial overturn counts as one favorable appeal.
+  precision: {storage_type: "NUMERIC(18,6)", display_decimal_places: 2, rounding_mode: half_away_from_zero, division_by_zero: "null"}
+source_dependencies:
+  appeals: [source_system, appeal_id, denial_source_system, denial_id, claim_source_system, claim_id, claim_submission_sequence, appeal_level, appeal_status, filed_at, decision_date, outcome, source_updated_at, trusted_published_at, processing_status]
+  denials: [source_system, denial_id, claim_source_system, claim_id, claim_submission_sequence, claim_line_number, claim_line_id, payer_id, denial_reason_code, source_updated_at, trusted_published_at, processing_status]
+  claims: [source_system, claim_id, submission_sequence, provider_id, facility_id, source_updated_at, trusted_published_at, processing_status]
+  claim-lines: [source_system, claim_id, submission_sequence, line_number, claim_line_id, procedure_code, procedure_code_system, diagnosis_codes, diagnosis_code_system, source_updated_at, trusted_published_at, processing_status]
+validation_rules:
+  - {id: MQ-APS-001, severity: critical, condition: numerator appeal keys are not a subset of denominator appeal keys}
+  - {id: MQ-APS-002, severity: error, condition: a decided appeal lacks filed_at decision_date or a final allowed outcome}
+  - {id: MQ-APS-003, severity: critical, condition: an appeal does not resolve to exactly one denial and claim}
+  - {id: MQ-APS-004, severity: critical, condition: dimensional joins change the unfiltered distinct appeal count}
+  - {id: MQ-APS-005, severity: critical, condition: result is below 0 or above 100 when denominator is positive}
+test_scenarios:
+  - {id: MT-APS-001, category: boundary, given: decisions fall on cohort start and end dates, expected: start is included and end is excluded}
+  - {id: MT-APS-002, category: "null", given: decided status lacks outcome, expected: event is excluded and consistency rule fails}
+  - {id: MT-APS-003, category: reversal, given: outcome is corrected from upheld to overturned, expected: latest version restates numerator and denominator once}
+  - {id: MT-APS-004, category: dimensional, given: multiple appeal levels and claim lines share one denial, expected: each distinct appeal event is counted once without join fanout}
+  - {id: MT-APS-005, category: zero_denominator, given: cohort has no decided appeals, expected: result is null with not_applicable status}

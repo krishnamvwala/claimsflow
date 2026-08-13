@@ -1,0 +1,72 @@
+dictionary_version: 1.0.0
+metric_id: MET-NCR-001
+slug: net_collection_rate
+name: Net collection rate
+status: baseline_draft
+description: Percentage of collectible charges realized through payer and patient payments for a service-date claim cohort.
+requirements: [FR-MET-001, FR-MET-002, FR-MET-004, FR-MET-005]
+acceptance_criteria: [AC-MET-001, AC-MET-002, AC-MET-004, AC-MET-005]
+business:
+  purpose: Measure realized collections against charges contractually collectible after allowed contractual adjustments.
+  decision: Identify collection leakage by payer provider facility and service cohort without hiding write-offs in the denominator.
+  owner: Revenue Cycle Finance
+  steward: ClaimsFlow Analytics Engineering
+calculation:
+  metric_type: ratio
+  unit: percent
+  output_grain: One service-date cohort result and selected dimension intersection at calculation cutoff
+  formula: 100 * net_payer_and_patient_payments / (gross_billed_charges - net_contractual_adjustments)
+  numerator:
+    label: Net payer and patient payments
+    aggregation: sum_signed
+    expression: credits minus linked debit refunds or reversals whose original transaction_type is payer_payment or patient_payment
+    grain: Financial transaction linked to an eligible claim identity
+    inclusions: [published payer_payment and patient_payment credits plus linked refund or reversal debits known at cutoff]
+    exclusions: [contractual adjustments, write-offs, unrelated adjustments, unlinked reversals]
+    null_handling: Null or unresolved transaction classification is excluded with blocking metric evidence.
+    field_references: [payments.source_system, payments.payment_id, payments.claim_source_system, payments.claim_id, payments.claim_submission_sequence, payments.transaction_type, payments.direction, payments.amount, payments.reverses_payment_source_system, payments.reverses_payment_id]
+  denominator:
+    label: Net collectible charges
+    aggregation: sum_minus_sum_signed
+    expression: current eligible claims.billed_amount minus net contractual_adjustment credits plus their linked debit reversals
+    grain: Current claim identity plus linked financial transactions
+    inclusions: [current published non-void non-rejected claim headers in service cohort and contractual_adjustment transactions known at cutoff]
+    exclusions: [write_off transactions, claim-line charges, denominator components from ineligible claims]
+    null_handling: Null charges or adjustment classification is invalid; claim identities with net collectible charges less than or equal to zero are excluded with evidence.
+    field_references: [claims.source_system, claims.claim_id, claims.submission_sequence, claims.billed_amount, payments.transaction_type, payments.direction, payments.amount, payments.reverses_payment_source_system, payments.reverses_payment_id]
+  record_selection:
+    - Select one current claim identity at cutoff using highest non-rejected submission_sequence then latest source_updated_at; a rejected replacement does not suppress the preceding valid submission.
+    - Include linked financial transactions from all submission sequences of that selected claim identity so replacement submissions do not strand valid prior ledger effects.
+    - Resolve refund and reversal transactions through the complete original-payment key and classify their debit against the original transaction type.
+  time:
+    mode: period
+    event_field: claims.service_to_date
+    timezone: UTC
+    boundary: start_inclusive_end_exclusive
+    cutoff_rule: Cohort current eligible claims by service_to_date and include linked financial transactions posted by calculation_cutoff_at.
+    restatement_policy: Recompute open service cohorts for 365 days as collections adjustments refunds and reversals arrive.
+  dimensions:
+    - {name: payer, source_field: claims.payer_id}
+    - {name: provider, source_field: claims.provider_id}
+    - {name: facility, source_field: claims.facility_id}
+    - {name: diagnosis, source_field: claims.primary_diagnosis_code}
+    - {name: time, source_field: claims.service_to_date}
+  null_behavior: Return null with not_applicable status when net collectible charges are zero; never coerce missing components to zero.
+  reversal_behavior: Refunds and reversals are signed debits assigned to the original payment or contractual-adjustment bucket through the complete reversal pointer.
+  adjustment_behavior: Only contractual_adjustment reduces collectible charges; write_off never reduces the denominator.
+  precision: {storage_type: "NUMERIC(18,6)", display_decimal_places: 2, rounding_mode: half_away_from_zero, division_by_zero: "null"}
+source_dependencies:
+  claims: [source_system, claim_id, submission_sequence, payer_id, provider_id, facility_id, primary_diagnosis_code, primary_diagnosis_code_system, claim_status, service_to_date, billed_amount, currency_code, source_updated_at, trusted_published_at, processing_status]
+  payments: [source_system, payment_id, claim_source_system, claim_id, claim_submission_sequence, transaction_type, direction, amount, currency_code, posted_at, reverses_payment_source_system, reverses_payment_id, source_updated_at, trusted_published_at, processing_status]
+validation_rules:
+  - {id: MQ-NCR-001, severity: critical, condition: current claim selection produces more than one row per source_system and claim_id}
+  - {id: MQ-NCR-002, severity: critical, condition: a refund or reversal cannot resolve to one original transaction and classification bucket}
+  - {id: MQ-NCR-003, severity: error, condition: a write-off reduces the denominator or a contractual adjustment enters the numerator}
+  - {id: MQ-NCR-004, severity: error, condition: an included transaction magnitude is null or nonpositive its direction disagrees with transaction type or its currency is non-USD}
+  - {id: MQ-NCR-005, severity: critical, condition: denominator is nonpositive but a numeric rate is published}
+test_scenarios:
+  - {id: MT-NCR-001, category: boundary, given: service_to_date equals period start or end, expected: start is included and end is excluded}
+  - {id: MT-NCR-002, category: "null", given: payment classification or claim charge is null, expected: metric blocks instead of treating it as zero}
+  - {id: MT-NCR-003, category: reversal, given: payer payment is partially refunded, expected: refund debit reduces numerator through original-payment linkage}
+  - {id: MT-NCR-004, category: dimensional, given: transactions and claims span payers, expected: signed component slices reconcile before rate division}
+  - {id: MT-NCR-005, category: zero_denominator, given: net collectible charges equal zero, expected: result is null with not_applicable status}
