@@ -13,11 +13,19 @@ requirements:
   - FR-WH-002
   - FR-WH-003
   - FR-WH-007
+acceptance_criteria:
+  - AC-ING-001
+  - AC-ING-004
+  - AC-DQ-001
+  - AC-DQ-002
+  - AC-WH-002
+  - AC-WH-003
+  - AC-WH-007
 synthetic_only: true
 fixture_profile:
   baseline_rows_per_month: 100000
   invalid_fixture_rate: 0.02
-  required_scenarios: [original, replacement, void, duplicate, missing_identity, invalid_dates, missing_reference, financial_mismatch, missing_deadline]
+  required_scenarios: [original, replacement, void, duplicate, missing_identity, invalid_dates, missing_reference, eligibility_mismatch, financial_mismatch, missing_deadline]
 owners:
   business: Revenue Cycle Operations
   technical: ClaimsFlow Data Engineering
@@ -41,26 +49,48 @@ keys:
     - claim_id
     - submission_sequence
 relationships:
-  - fields: [patient_id]
-    target: eligibility.patient_id
+  - fields: [eligibility_source_system, eligibility_id]
+    target: eligibility.source_system+eligibility_id
     required: true
+    match: exact_key
+    cardinality: exactly_one
   - fields: [provider_id]
     target: reference-data.providers.provider_id
     required: true
+    match: effective_at
+    as_of_field: service_from_date
+    cardinality: exactly_one_effective
   - fields: [facility_id]
     target: reference-data.facilities.facility_id
     required: true
+    match: effective_at
+    as_of_field: service_from_date
+    cardinality: exactly_one_effective
   - fields: [payer_id]
     target: reference-data.payers.payer_id
     required: true
+    match: effective_at
+    as_of_field: service_from_date
+    cardinality: exactly_one_effective
   - fields: [plan_id]
     target: reference-data.plans.plan_id
     required: true
+    match: effective_at
+    as_of_field: service_from_date
+    cardinality: exactly_one_effective
+  - fields: [primary_diagnosis_code, primary_diagnosis_code_system]
+    target: reference-data.diagnoses.diagnosis_code+code_system
+    required: true
+    match: effective_at
+    as_of_field: service_from_date
+    cardinality: exactly_one_effective
 schema:
   - {name: claim_id, type: STRING, required: true, nullable: false, description: Stable synthetic claim identifier}
   - {name: submission_sequence, type: INTEGER, required: true, nullable: false, description: One-based submission or corrected-claim sequence, minimum: 1}
   - {name: original_claim_id, type: STRING, required: true, nullable: true, description: Prior claim identifier for replacement or void submissions}
   - {name: patient_id, type: STRING, required: true, nullable: false, description: Stable synthetic patient identifier}
+  - {name: eligibility_source_system, type: STRING, required: true, nullable: false, description: Source system from the linked eligibility delivery envelope}
+  - {name: eligibility_id, type: STRING, required: true, nullable: false, description: Linked eligibility response identifier}
   - {name: provider_id, type: STRING, required: true, nullable: false, description: Rendering provider reference}
   - {name: facility_id, type: STRING, required: true, nullable: false, description: Servicing facility reference}
   - {name: payer_id, type: STRING, required: true, nullable: false, description: Primary payer reference}
@@ -73,6 +103,7 @@ schema:
   - {name: submitted_at, type: TIMESTAMP, required: true, nullable: false, description: Source submission instant}
   - {name: adjudicated_at, type: TIMESTAMP, required: true, nullable: true, description: Latest payer adjudication instant}
   - {name: primary_diagnosis_code, type: STRING, required: true, nullable: false, description: Primary diagnosis code}
+  - {name: primary_diagnosis_code_system, type: STRING, required: true, nullable: false, description: Primary diagnosis code family, allowed_values: [ICD-10-CM, SYNTHETIC]}
   - {name: billed_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Total amount billed in USD, minimum: 0.00}
   - {name: allowed_amount, type: "NUMERIC(18,2)", required: true, nullable: true, description: Total payer-allowed amount in USD, minimum: 0.00}
   - {name: paid_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Total posted payment in USD, minimum: 0.00}
@@ -85,16 +116,17 @@ schema:
   - {name: filing_deadline_date, type: DATE, required: true, nullable: true, description: Last permitted initial filing date}
   - {name: source_updated_at, type: TIMESTAMP, required: true, nullable: false, description: Source record version instant}
 validation_rules:
-  - {id: DQ-CLM-001, severity: critical, disposition: rejected, condition: claim_id patient_id provider_id facility_id payer_id or plan_id is empty}
+  - {id: DQ-CLM-001, severity: critical, disposition: rejected, condition: claim_id patient_id eligibility_source_system eligibility_id provider_id facility_id payer_id or plan_id is empty}
   - {id: DQ-CLM-002, severity: critical, disposition: rejected, condition: duplicate natural key exists within the delivery}
   - {id: DQ-CLM-003, severity: error, disposition: quarantined, condition: service_to_date is before service_from_date or either service date is after submitted_at}
   - {id: DQ-CLM-004, severity: error, disposition: quarantined, condition: a required provider facility payer plan or diagnosis relationship does not resolve}
   - {id: DQ-CLM-005, severity: error, disposition: quarantined, condition: any monetary value is negative or currency_code is not USD}
   - {id: DQ-CLM-006, severity: error, disposition: quarantined, condition: billed_amount differs from paid_amount plus adjustment_amount plus outstanding_balance by more than 0.00}
   - {id: DQ-CLM-007, severity: error, disposition: quarantined, condition: allowed_amount is present and paid_amount plus patient_responsibility_amount exceeds allowed_amount without a linked reversal}
-  - {id: DQ-CLM-008, severity: error, disposition: quarantined, condition: primary_diagnosis_code fails the active diagnosis reference format or validity interval}
+  - {id: DQ-CLM-008, severity: error, disposition: quarantined, condition: primary_diagnosis_code and primary_diagnosis_code_system pair does not resolve to exactly one active diagnosis reference at service_from_date}
   - {id: DQ-CLM-009, severity: error, disposition: quarantined, condition: a submitted accepted rejected or denied claim lacks filing_deadline_date}
   - {id: DQ-CLM-010, severity: error, disposition: quarantined, condition: submission_type is replacement or void and original_claim_id is empty or unresolved}
+  - {id: DQ-CLM-011, severity: error, disposition: quarantined, condition: linked eligibility response is unresolved has a different patient payer or plan is not confirmed active or does not cover the complete service_from_date through service_to_date interval}
 reconciliation:
   record_count: Exact parsed-row equality and disposition equality required
   amounts:

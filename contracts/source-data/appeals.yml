@@ -13,11 +13,19 @@ requirements:
   - FR-PRI-002
   - FR-PRI-005
   - FR-ALT-001
+acceptance_criteria:
+  - AC-ING-001
+  - AC-ING-004
+  - AC-DQ-001
+  - AC-WH-002
+  - AC-PRI-002
+  - AC-PRI-005
+  - AC-ALT-001
 synthetic_only: true
 fixture_profile:
   baseline_rows_per_month: 6000
   invalid_fixture_rate: 0.03
-  required_scenarios: [draft, ready_for_human_review, filed, pending, overturned, partially_overturned, upheld, withdrawn, expired, late_unfiled, invalid_financials]
+  required_scenarios: [draft, ready_for_human_review, filed, pending, overturned, partially_overturned, upheld, withdrawn, expired, late_unfiled, deadline_mismatch, invalid_event_order, invalid_financials]
 owners: {business: Denial Management, technical: ClaimsFlow Data Engineering}
 delivery:
   format: csv
@@ -34,12 +42,15 @@ keys:
   natural_key: [source_system, appeal_id]
   source_record_id: [appeal_id]
 relationships:
-  - {fields: [denial_id], target: denials.denial_id, required: true}
-  - {fields: [claim_id], target: claims.claim_id, required: true}
+  - {fields: [denial_source_system, denial_id], target: denials.source_system+denial_id, required: true, match: exact_key, cardinality: exactly_one}
+  - {fields: [claim_source_system, claim_id, claim_submission_sequence], target: claims.source_system+claim_id+submission_sequence, required: true, match: exact_key, cardinality: exactly_one}
 schema:
   - {name: appeal_id, type: STRING, required: true, nullable: false, description: Stable synthetic appeal-event identifier}
+  - {name: denial_source_system, type: STRING, required: true, nullable: false, description: Source system from the linked denial delivery envelope}
   - {name: denial_id, type: STRING, required: true, nullable: false, description: Parent denial identifier}
+  - {name: claim_source_system, type: STRING, required: true, nullable: false, description: Source system from the linked claim delivery envelope}
   - {name: claim_id, type: STRING, required: true, nullable: false, description: Parent claim identifier}
+  - {name: claim_submission_sequence, type: INTEGER, required: true, nullable: false, description: Parent claim submission sequence, minimum: 1}
   - {name: appeal_level, type: INTEGER, required: true, nullable: false, description: One-based appeal level, minimum: 1, maximum: 3}
   - {name: appeal_status, type: STRING, required: true, nullable: false, description: Human workflow state, allowed_values: [draft, ready_for_human_review, filed, pending, overturned, partially_overturned, upheld, withdrawn, expired]}
   - {name: created_at, type: TIMESTAMP, required: true, nullable: false, description: Appeal work-item creation instant}
@@ -54,16 +65,18 @@ schema:
   - {name: owner_queue, type: STRING, required: true, nullable: false, description: Human review queue; not an automated submission destination}
   - {name: source_updated_at, type: TIMESTAMP, required: true, nullable: false, description: Source record version instant}
 validation_rules:
-  - {id: DQ-APL-001, severity: critical, disposition: rejected, condition: appeal_id denial_id claim_id appeal_level appeal_status or appeal_deadline_date is empty}
+  - {id: DQ-APL-001, severity: critical, disposition: rejected, condition: appeal_id denial_source_system denial_id claim_source_system claim_id claim_submission_sequence appeal_level appeal_status or appeal_deadline_date is empty}
   - {id: DQ-APL-002, severity: critical, disposition: rejected, condition: duplicate natural key exists within the delivery}
-  - {id: DQ-APL-003, severity: error, disposition: quarantined, condition: denial_id or claim_id does not resolve to the same denial relationship}
-  - {id: DQ-APL-004, severity: error, disposition: quarantined, condition: created_at or filed_at occurs after appeal_deadline_date for a non-expired record}
+  - {id: DQ-APL-003, severity: error, disposition: quarantined, condition: complete denial or claim key does not resolve or the resolved denial belongs to a different complete claim key}
+  - {id: DQ-APL-004, severity: error, disposition: quarantined, condition: UTC date of created_at or filed_at is after appeal_deadline_date for a non-expired record}
   - {id: DQ-APL-005, severity: error, disposition: quarantined, condition: filed pending or decided status lacks filed_at}
   - {id: DQ-APL-006, severity: error, disposition: quarantined, condition: decided status lacks decision_date or outcome or a non-decided status contains either value}
   - {id: DQ-APL-007, severity: error, disposition: quarantined, condition: requested_amount is not positive recovered_amount is negative or exceeds requested_amount or currency_code is not USD}
   - {id: DQ-APL-008, severity: error, disposition: quarantined, condition: appeal_status advances to ready_for_human_review or filed while documentation_ready_flag is false}
   - {id: DQ-APL-009, severity: warning, disposition: accepted_with_warning, condition: an unfiled appeal is within 7 calendar days of appeal_deadline_date}
   - {id: DQ-APL-010, severity: critical, disposition: block_batch, condition: source exposes an automatic file submit or approve action instead of human workflow evidence}
+  - {id: DQ-APL-011, severity: error, disposition: quarantined, condition: appeal_deadline_date does not equal the resolved parent denial appeal_deadline_date}
+  - {id: DQ-APL-012, severity: error, disposition: quarantined, condition: filed_at is before created_at or decision_date is before the UTC calendar date of created_at or filed_at}
 reconciliation:
   record_count: Exact parsed-row equality and disposition equality required
   amounts: [requested_amount, recovered_amount]

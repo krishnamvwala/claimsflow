@@ -105,7 +105,10 @@ Contract `required` means the column must exist. Contract `nullable: false` mean
 
 - Natural keys are evaluated after only the approved deterministic normalizations in the validation policy.
 - A duplicate natural key within a file is invalid. A key repeated across deliveries is a new source version only when its declared update timestamp or submission sequence advances.
-- Foreign-key relationships are checked against the same batch or the latest valid reference snapshot effective at the business event date.
+- An `exact_key` relationship maps its source fields, in order, to every field in the target contract's natural key, including lineage-envelope fields such as `source_system`. Required exact-key relationships resolve to exactly one parent; optional compound keys must be either entirely empty or resolve to one parent.
+- An `effective_at` relationship maps its source fields to the complete reference business key and uses `as_of_field` to require exactly one version where `valid_from <= as_of_field < valid_to`, treating empty `valid_to` as current. Reference business identifiers are conformed across delivery sources; overlapping or duplicate effective versions are invalid.
+- List relationships apply the same effective-date rule to every list member.
+- Claims link to a unique eligibility response by source system and eligibility ID. The response must match patient, payer, and plan, be confirmed active, and cover the complete service interval.
 - Missing required claim, patient, payer, denial, payment, or appeal identity is never inferred.
 - Reference records use half-open validity intervals: `valid_from` is inclusive and `valid_to` is exclusive; empty `valid_to` means current.
 - A replay or backfill must use the same contract version originally recorded unless a reviewed migration explicitly authorizes another version.
@@ -147,6 +150,8 @@ This artifact is ready for baseline approval when:
 - Exactly eight unique source-family contracts parse successfully.
 - Every contract declares an exact grain, delivery interface, natural key, source-record identity, schema, validation rules, reconciliation behavior, freshness expectation, ownership, and synthetic-only boundary.
 - Every natural-key and source-record field exists in its declared schema or the shared lineage envelope.
+- Every direct relationship contains the complete target natural key; every effective-dated relationship contains the complete reference business key, an as-of field, and valid cardinality.
+- Every cited requirement maps to its exact primary acceptance criterion in the acceptance matrix.
 - Every contract declares a reproducible synthetic fixture profile with baseline volume and required edge cases.
 - Every rule identifier is globally unique and its severity/disposition pairing follows the validation policy.
 - All relationship targets resolve to a declared source family or reference dataset.

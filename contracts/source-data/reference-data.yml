@@ -14,6 +14,15 @@ requirements:
   - FR-WH-006
   - FR-MET-003
   - FR-PRI-002
+acceptance_criteria:
+  - AC-ING-001
+  - AC-ING-004
+  - AC-DQ-001
+  - AC-DQ-002
+  - AC-WH-003
+  - AC-WH-006
+  - AC-MET-003
+  - AC-PRI-002
 synthetic_only: true
 fixture_profile:
   baseline_rows_per_month: 5000
@@ -35,11 +44,11 @@ keys:
   natural_key: dataset_specific
   source_record_id: dataset_specific
 relationships:
-  - {fields: [plans.payer_id], target: reference-data.payers.payer_id, required: true}
+  - {fields: [plans.payer_id], target: reference-data.payers.payer_id, required: true, match: effective_at, as_of_field: plans.valid_from, cardinality: exactly_one_effective}
 datasets:
   - name: payers
     grain: One effective-dated payer version
-    natural_key: [source_system, payer_id, valid_from]
+    natural_key: [payer_id, valid_from]
     source_record_id: [payer_id, valid_from]
     schema:
       - {name: payer_id, type: STRING, required: true, nullable: false, description: Stable synthetic payer identifier}
@@ -54,7 +63,7 @@ datasets:
       - {name: active_flag, type: BOOLEAN, required: true, nullable: false, description: Current active indicator}
   - name: plans
     grain: One effective-dated payer plan version
-    natural_key: [source_system, plan_id, valid_from]
+    natural_key: [plan_id, valid_from]
     source_record_id: [plan_id, valid_from]
     schema:
       - {name: plan_id, type: STRING, required: true, nullable: false, description: Stable synthetic plan identifier}
@@ -66,7 +75,7 @@ datasets:
       - {name: active_flag, type: BOOLEAN, required: true, nullable: false, description: Current active indicator}
   - name: providers
     grain: One effective-dated provider version
-    natural_key: [source_system, provider_id, valid_from]
+    natural_key: [provider_id, valid_from]
     source_record_id: [provider_id, valid_from]
     schema:
       - {name: provider_id, type: STRING, required: true, nullable: false, description: Stable synthetic provider identifier}
@@ -77,7 +86,7 @@ datasets:
       - {name: active_flag, type: BOOLEAN, required: true, nullable: false, description: Current active indicator}
   - name: facilities
     grain: One effective-dated facility version
-    natural_key: [source_system, facility_id, valid_from]
+    natural_key: [facility_id, valid_from]
     source_record_id: [facility_id, valid_from]
     schema:
       - {name: facility_id, type: STRING, required: true, nullable: false, description: Stable synthetic facility identifier}
@@ -89,7 +98,7 @@ datasets:
       - {name: active_flag, type: BOOLEAN, required: true, nullable: false, description: Current active indicator}
   - name: diagnoses
     grain: One effective-dated diagnosis code version
-    natural_key: [source_system, diagnosis_code, code_system, valid_from]
+    natural_key: [diagnosis_code, code_system, valid_from]
     source_record_id: [diagnosis_code, code_system, valid_from]
     schema:
       - {name: diagnosis_code, type: STRING, required: true, nullable: false, description: Synthetic or public-format diagnosis code}
@@ -100,7 +109,7 @@ datasets:
       - {name: active_flag, type: BOOLEAN, required: true, nullable: false, description: Current active indicator}
   - name: procedures
     grain: One effective-dated procedure code version
-    natural_key: [source_system, procedure_code, code_system, valid_from]
+    natural_key: [procedure_code, code_system, valid_from]
     source_record_id: [procedure_code, code_system, valid_from]
     schema:
       - {name: procedure_code, type: STRING, required: true, nullable: false, description: Synthetic or public-format procedure code}
@@ -111,7 +120,7 @@ datasets:
       - {name: active_flag, type: BOOLEAN, required: true, nullable: false, description: Current active indicator}
   - name: denial-reasons
     grain: One effective-dated denial-reason version
-    natural_key: [source_system, denial_reason_code, valid_from]
+    natural_key: [denial_reason_code, valid_from]
     source_record_id: [denial_reason_code, valid_from]
     schema:
       - {name: denial_reason_code, type: STRING, required: true, nullable: false, description: Stable denial-reason code}

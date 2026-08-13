@@ -11,6 +11,12 @@ requirements:
   - FR-DQ-001
   - FR-WH-002
   - FR-WH-007
+acceptance_criteria:
+  - AC-ING-001
+  - AC-ING-004
+  - AC-DQ-001
+  - AC-WH-002
+  - AC-WH-007
 synthetic_only: true
 fixture_profile:
   baseline_rows_per_month: 4000
@@ -32,7 +38,7 @@ keys:
   natural_key: [source_system, remittance_id]
   source_record_id: [remittance_id]
 relationships:
-  - {fields: [payer_id], target: reference-data.payers.payer_id, required: true}
+  - {fields: [payer_id], target: reference-data.payers.payer_id, required: true, match: effective_at, as_of_field: remittance_date, cardinality: exactly_one_effective}
 schema:
   - {name: remittance_id, type: STRING, required: true, nullable: false, description: Stable synthetic remittance identifier}
   - {name: payer_id, type: STRING, required: true, nullable: false, description: Payer reference}

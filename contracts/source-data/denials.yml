@@ -19,6 +19,20 @@ requirements:
   - FR-ALT-001
   - FR-ALT-002
   - FR-ALT-006
+acceptance_criteria:
+  - AC-ING-001
+  - AC-ING-004
+  - AC-DQ-001
+  - AC-DQ-002
+  - AC-WH-002
+  - AC-WH-003
+  - AC-MET-003
+  - AC-PRI-002
+  - AC-PRI-005
+  - AC-PRI-006
+  - AC-ALT-001
+  - AC-ALT-002
+  - AC-ALT-006
 synthetic_only: true
 fixture_profile:
   baseline_rows_per_month: 12000
@@ -40,13 +54,16 @@ keys:
   natural_key: [source_system, denial_id]
   source_record_id: [denial_id]
 relationships:
-  - {fields: [claim_id], target: claims.claim_id, required: true}
-  - {fields: [claim_id, claim_line_id], target: claim-lines.claim_id+claim_line_id, required: false}
-  - {fields: [payer_id], target: reference-data.payers.payer_id, required: true}
-  - {fields: [denial_reason_code], target: reference-data.denial-reasons.denial_reason_code, required: true}
+  - {fields: [claim_source_system, claim_id, claim_submission_sequence], target: claims.source_system+claim_id+submission_sequence, required: true, match: exact_key, cardinality: exactly_one}
+  - {fields: [claim_source_system, claim_id, claim_submission_sequence, claim_line_number], target: claim-lines.source_system+claim_id+submission_sequence+line_number, required: false, match: exact_key, cardinality: zero_or_one}
+  - {fields: [payer_id], target: reference-data.payers.payer_id, required: true, match: effective_at, as_of_field: denial_date, cardinality: exactly_one_effective}
+  - {fields: [denial_reason_code], target: reference-data.denial-reasons.denial_reason_code, required: true, match: effective_at, as_of_field: denial_date, cardinality: exactly_one_effective}
 schema:
   - {name: denial_id, type: STRING, required: true, nullable: false, description: Stable synthetic denial-event identifier}
+  - {name: claim_source_system, type: STRING, required: true, nullable: false, description: Source system from the linked claim and claim-line delivery envelope}
   - {name: claim_id, type: STRING, required: true, nullable: false, description: Denied claim identifier}
+  - {name: claim_submission_sequence, type: INTEGER, required: true, nullable: false, description: Denied claim submission sequence, minimum: 1}
+  - {name: claim_line_number, type: INTEGER, required: true, nullable: true, description: Denied claim-line number when line-specific, minimum: 1}
   - {name: claim_line_id, type: STRING, required: true, nullable: true, description: Denied line identifier when line-specific}
   - {name: payer_id, type: STRING, required: true, nullable: false, description: Denying payer reference}
   - {name: denial_reason_code, type: STRING, required: true, nullable: false, description: Denial-reason reference}
@@ -63,15 +80,16 @@ schema:
   - {name: missing_document_codes, type: STRING_LIST, required: true, nullable: true, description: Synthetic missing-document references}
   - {name: source_updated_at, type: TIMESTAMP, required: true, nullable: false, description: Source record version instant}
 validation_rules:
-  - {id: DQ-DEN-001, severity: critical, disposition: rejected, condition: denial_id claim_id payer_id denial_reason_code denial_date or received_at is empty}
+  - {id: DQ-DEN-001, severity: critical, disposition: rejected, condition: denial_id claim_source_system claim_id claim_submission_sequence payer_id denial_reason_code denial_date or received_at is empty}
   - {id: DQ-DEN-002, severity: critical, disposition: rejected, condition: duplicate natural key exists within the delivery}
-  - {id: DQ-DEN-003, severity: error, disposition: quarantined, condition: claim_id populated claim_line_id or payer_id does not resolve consistently}
+  - {id: DQ-DEN-003, severity: error, disposition: quarantined, condition: complete claim key or populated complete claim-line key does not resolve consistently or claim_line_id disagrees with the resolved line}
   - {id: DQ-DEN-004, severity: error, disposition: quarantined, condition: denial_reason_code is unknown invalid at denial_date or disagrees with denial_category}
   - {id: DQ-DEN-005, severity: error, disposition: quarantined, condition: denial_date is after received_at or before the related service or submission date}
   - {id: DQ-DEN-006, severity: error, disposition: quarantined, condition: denied_amount is not positive exceeds related outstanding exposure or currency_code is not USD}
   - {id: DQ-DEN-007, severity: error, disposition: quarantined, condition: filing_deadline_date or appeal_deadline_date is missing or before denial_date}
   - {id: DQ-DEN-008, severity: error, disposition: quarantined, condition: documentation_ready_flag is true while missing_document_codes is nonempty}
   - {id: DQ-DEN-009, severity: warning, disposition: accepted_with_warning, condition: an open denial is within 7 calendar days of its appeal deadline}
+  - {id: DQ-DEN-010, severity: error, disposition: quarantined, condition: exactly one of claim_line_number and claim_line_id is populated instead of both or neither}
 reconciliation:
   record_count: Exact parsed-row equality and disposition equality required
   amounts: [denied_amount]

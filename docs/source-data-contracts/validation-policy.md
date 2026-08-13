@@ -62,6 +62,7 @@ Identifiers are never case-folded, truncated, padded, guessed, or cross-walked a
 - Date order checks use calendar dates; duration checks use UTC instants.
 - Currency is USD in version 1. Cross-currency records are rejected.
 - Payment and adjustment files store a positive `amount` and use `direction` to determine the sign: `credit` increases payment/adjustment applied to the account; `debit` reverses it.
+- `payer_payment`, `patient_payment`, `contractual_adjustment`, and `write_off` require `credit`; `refund` and `reversal` require `debit`.
 - A payment cannot exceed the eligible billed or outstanding amount under the current source state unless its type is an explicitly linked refund/reversal.
 - Claim and claim-line amount equations use the exact fields and tolerance declared in their contracts.
 - Empty nullable monetary fields are not treated as zero unless a downstream governed metric explicitly defines that behavior.

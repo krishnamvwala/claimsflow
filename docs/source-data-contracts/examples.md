@@ -32,12 +32,12 @@ Before ingestion, ClaimsFlow verifies the approved generator, contract compatibi
 | --- | --- | --- |
 | Reference data | Payer `PAY-SYN-014`, plan `PLAN-SYN-014-A`, provider `PRV-SYN-082`, facility `FAC-SYN-07` | Conformed identifiers are effective on the event dates |
 | Eligibility | `ELG-SYN-90122` for patient `PAT-SYN-44091` | Plan belongs to payer and coverage spans the service date |
-| Claim | `CLM-SYN-800120`, submission `1` | Patient, payer, plan, provider, and facility resolve |
-| Claim line | `CLN-SYN-800120-01`, line `1` | Parent claim plus diagnosis and procedure references resolve |
-| Remittance | `REM-SYN-5520` | Payer and payment control total resolve |
-| Payment | `PMT-SYN-991102` | Payment connects the remittance to the claim and line |
-| Denial | `DEN-SYN-8830` | Denial connects to the claim, payer, reason, exposure, and deadline |
-| Appeal | `APL-SYN-2201` | Human-reviewed appeal connects to the denial and claim |
+| Claim | `synth_ehr_north + CLM-SYN-800120 + 1` | Unique eligibility response, patient, payer, plan, provider, and facility resolve for the complete service interval |
+| Claim line | `synth_ehr_north + CLM-SYN-800120 + 1 + 1` | Complete parent claim key plus effective diagnosis and procedure references resolve |
+| Remittance | `synth_payer_014 + REM-SYN-5520` | Payer and payment control total resolve |
+| Payment | `PMT-SYN-991102` | Complete remittance, claim, and optional claim-line keys resolve |
+| Denial | `synth_payer_014 + DEN-SYN-8830` | Complete claim/line keys, payer, reason, exposure, and deadline resolve |
+| Appeal | `APL-SYN-2201` | Complete denial and claim keys resolve; deadline matches the denial and human events are ordered |
 
 This chain is valid only when all event dates fall inside the applicable reference and coverage validity intervals and the financial rollups reconcile at `0.00` USD variance.
 
