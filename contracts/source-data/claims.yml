@@ -49,6 +49,11 @@ keys:
     - claim_id
     - submission_sequence
 relationships:
+  - fields: [original_claim_source_system, original_claim_id, original_submission_sequence]
+    target: claims.source_system+claim_id+submission_sequence
+    required: false
+    match: exact_key
+    cardinality: zero_or_one
   - fields: [eligibility_source_system, eligibility_id]
     target: eligibility.source_system+eligibility_id
     required: true
@@ -87,7 +92,9 @@ relationships:
 schema:
   - {name: claim_id, type: STRING, required: true, nullable: false, description: Stable synthetic claim identifier}
   - {name: submission_sequence, type: INTEGER, required: true, nullable: false, description: One-based submission or corrected-claim sequence, minimum: 1}
+  - {name: original_claim_source_system, type: STRING, required: true, nullable: true, description: Source system from the original claim delivery envelope for replacement or void submissions}
   - {name: original_claim_id, type: STRING, required: true, nullable: true, description: Prior claim identifier for replacement or void submissions}
+  - {name: original_submission_sequence, type: INTEGER, required: true, nullable: true, description: Prior claim submission sequence for replacement or void submissions, minimum: 1}
   - {name: patient_id, type: STRING, required: true, nullable: false, description: Stable synthetic patient identifier}
   - {name: eligibility_source_system, type: STRING, required: true, nullable: false, description: Source system from the linked eligibility delivery envelope}
   - {name: eligibility_id, type: STRING, required: true, nullable: false, description: Linked eligibility response identifier}
@@ -106,7 +113,8 @@ schema:
   - {name: primary_diagnosis_code_system, type: STRING, required: true, nullable: false, description: Primary diagnosis code family, allowed_values: [ICD-10-CM, SYNTHETIC]}
   - {name: billed_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Total amount billed in USD, minimum: 0.00}
   - {name: allowed_amount, type: "NUMERIC(18,2)", required: true, nullable: true, description: Total payer-allowed amount in USD, minimum: 0.00}
-  - {name: paid_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Total posted payment in USD, minimum: 0.00}
+  - {name: payer_paid_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Net payer-originated payments posted to the claim in USD, minimum: 0.00}
+  - {name: patient_paid_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Net patient-originated payments posted to the claim in USD, minimum: 0.00}
   - {name: patient_responsibility_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Assigned patient responsibility in USD, minimum: 0.00}
   - {name: adjustment_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Contractual or approved adjustment in USD, minimum: 0.00}
   - {name: outstanding_balance, type: "NUMERIC(18,2)", required: true, nullable: false, description: Remaining source balance in USD, minimum: 0.00}
@@ -121,17 +129,19 @@ validation_rules:
   - {id: DQ-CLM-003, severity: error, disposition: quarantined, condition: service_to_date is before service_from_date or either service date is after submitted_at}
   - {id: DQ-CLM-004, severity: error, disposition: quarantined, condition: a required provider facility payer plan or diagnosis relationship does not resolve}
   - {id: DQ-CLM-005, severity: error, disposition: quarantined, condition: any monetary value is negative or currency_code is not USD}
-  - {id: DQ-CLM-006, severity: error, disposition: quarantined, condition: billed_amount differs from paid_amount plus adjustment_amount plus outstanding_balance by more than 0.00}
-  - {id: DQ-CLM-007, severity: error, disposition: quarantined, condition: allowed_amount is present and paid_amount plus patient_responsibility_amount exceeds allowed_amount without a linked reversal}
+  - {id: DQ-CLM-006, severity: error, disposition: quarantined, condition: billed_amount differs from payer_paid_amount plus patient_paid_amount plus adjustment_amount plus outstanding_balance by more than 0.00}
+  - {id: DQ-CLM-007, severity: error, disposition: quarantined, condition: allowed_amount is present and payer_paid_amount plus patient_responsibility_amount exceeds allowed_amount without a linked reversal}
   - {id: DQ-CLM-008, severity: error, disposition: quarantined, condition: primary_diagnosis_code and primary_diagnosis_code_system pair does not resolve to exactly one active diagnosis reference at service_from_date}
   - {id: DQ-CLM-009, severity: error, disposition: quarantined, condition: a submitted accepted rejected or denied claim lacks filing_deadline_date}
-  - {id: DQ-CLM-010, severity: error, disposition: quarantined, condition: submission_type is replacement or void and original_claim_id is empty or unresolved}
+  - {id: DQ-CLM-010, severity: error, disposition: quarantined, condition: replacement or void lacks a complete original claim key the key does not resolve within the same source and claim identity or original_submission_sequence is not lower than submission_sequence or an original submission contains any original pointer}
   - {id: DQ-CLM-011, severity: error, disposition: quarantined, condition: linked eligibility response is unresolved has a different patient payer or plan is not confirmed active or does not cover the complete service_from_date through service_to_date interval}
+  - {id: DQ-CLM-012, severity: error, disposition: quarantined, condition: patient_paid_amount exceeds patient_responsibility_amount}
 reconciliation:
   record_count: Exact parsed-row equality and disposition equality required
   amounts:
     - billed_amount
-    - paid_amount
+    - payer_paid_amount
+    - patient_paid_amount
     - adjustment_amount
     - outstanding_balance
   tolerance_usd: 0.00

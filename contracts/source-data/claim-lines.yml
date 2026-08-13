@@ -67,7 +67,8 @@ schema:
   - {name: denial_reason_code, type: STRING, required: true, nullable: true, description: Source denial reason when line is denied}
   - {name: billed_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Line billed amount in USD, minimum: 0.00}
   - {name: allowed_amount, type: "NUMERIC(18,2)", required: true, nullable: true, description: Line allowed amount in USD, minimum: 0.00}
-  - {name: paid_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Line paid amount in USD, minimum: 0.00}
+  - {name: payer_paid_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Net payer-originated payments posted to the line in USD, minimum: 0.00}
+  - {name: patient_paid_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Net patient-originated payments posted to the line in USD, minimum: 0.00}
   - {name: patient_responsibility_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Line patient responsibility in USD, minimum: 0.00}
   - {name: adjustment_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Line adjustment amount in USD, minimum: 0.00}
   - {name: outstanding_balance, type: "NUMERIC(18,2)", required: true, nullable: false, description: Line remaining balance in USD, minimum: 0.00}
@@ -80,12 +81,13 @@ validation_rules:
   - {id: DQ-CLN-004, severity: error, disposition: quarantined, condition: service dates are reversed or outside parent claim service dates}
   - {id: DQ-CLN-005, severity: error, disposition: quarantined, condition: procedure diagnosis place-of-service or revenue code format or reference is invalid}
   - {id: DQ-CLN-006, severity: error, disposition: quarantined, condition: any monetary value is negative or currency_code is not USD}
-  - {id: DQ-CLN-007, severity: error, disposition: quarantined, condition: billed_amount differs from paid_amount plus adjustment_amount plus outstanding_balance by more than 0.00}
+  - {id: DQ-CLN-007, severity: error, disposition: quarantined, condition: billed_amount differs from payer_paid_amount plus patient_paid_amount plus adjustment_amount plus outstanding_balance by more than 0.00}
   - {id: DQ-CLN-008, severity: error, disposition: quarantined, condition: line_status is denied and denial_reason_code is empty or unknown}
-  - {id: DQ-CLN-009, severity: error, disposition: quarantined, condition: allowed_amount is present and paid_amount plus patient_responsibility_amount exceeds allowed_amount without a linked reversal}
+  - {id: DQ-CLN-009, severity: error, disposition: quarantined, condition: allowed_amount is present and payer_paid_amount plus patient_responsibility_amount exceeds allowed_amount without a linked reversal}
+  - {id: DQ-CLN-010, severity: error, disposition: quarantined, condition: patient_paid_amount exceeds patient_responsibility_amount}
 reconciliation:
   record_count: Exact parsed-row equality and disposition equality required
   parent_rollup: Sum line amounts by source_system claim_id and submission_sequence must equal accepted claim header amounts
-  amounts: [billed_amount, paid_amount, adjustment_amount, outstanding_balance]
+  amounts: [billed_amount, payer_paid_amount, patient_paid_amount, adjustment_amount, outstanding_balance]
   tolerance_usd: 0.00
 freshness: {event_field: source_updated_at, maximum_source_age: PT90M}

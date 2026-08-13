@@ -8,7 +8,7 @@ This policy is authoritative for all source contracts. Contract-specific rules m
 
 1. Verify synthetic provenance before project-managed storage or processing.
 2. Register source identity, file name, checksum, extract time, contract, and batch ID.
-3. Detect duplicate delivery.
+3. Detect duplicate delivery. If the source identity and checksum match an accepted delivery, record `duplicate_no_op` and stop before row processing.
 4. Validate file envelope, header, and schema.
 5. Preserve the immutable source-shaped row and lineage envelope.
 6. Apply approved deterministic normalizations with before/after audit evidence.
@@ -21,11 +21,12 @@ This policy is authoritative for all source contracts. Contract-specific rules m
 | Severity | Permitted disposition | Meaning |
 | --- | --- | --- |
 | `warning` | `accepted_with_warning` | Record is safe to publish, but the condition remains visible in quality evidence |
+| `warning` | `duplicate_no_op` | Delivery is audited as an identical replay; no records are processed or republished |
 | `error` | `quarantined` | Ambiguous or unsafe record is isolated pending verified correction or disposition |
 | `critical` | `rejected` | Structurally or semantically unusable record is retained as evidence but cannot enter trusted data |
 | `critical` | `block_batch` | File or reconciliation failure blocks all dependent trusted publication |
 
-A record with no failed rule is `accepted`. If multiple rules fail, precedence is `rejected`, `quarantined`, `accepted_with_warning`, then `accepted`. A `block_batch` result is recorded separately from record disposition and prevents publication even if some records are otherwise acceptable.
+A record with no failed rule is `accepted`. If multiple record rules fail, precedence is `rejected`, `quarantined`, `accepted_with_warning`, then `accepted`. `duplicate_no_op` is a delivery-level terminal status that creates no record dispositions. A `block_batch` result is recorded separately from record disposition and prevents publication even if some records are otherwise acceptable.
 
 ## 3. Common file and lineage rules
 
@@ -34,13 +35,14 @@ A record with no failed rule is `accepted`. If multiple rules fail, precedence i
 | DQ-CMN-001 | Delivery lacks approved synthetic-provenance evidence | critical | block_batch |
 | DQ-CMN-002 | Contract ID/version is absent, unknown, or incompatible | critical | block_batch |
 | DQ-CMN-003 | Header, column order, encoding, delimiter, or file-name pattern differs from the declared contract | critical | block_batch |
-| DQ-CMN-004 | Source identity plus SHA-256 checksum matches a previously accepted delivery | warning | accepted_with_warning; do not republish and record duplicate decision |
+| DQ-CMN-004 | Source identity plus SHA-256 checksum matches a previously accepted delivery | warning | duplicate_no_op; no records processed or republished; record the duplicate decision |
 | DQ-CMN-005 | File is empty when a delivery is expected | error | quarantine delivery and raise freshness/volume evidence |
 | DQ-CMN-006 | Declared row count or financial control total differs from parsed source content | critical | block_batch |
 | DQ-CMN-007 | `source_record_id`, `source_row_number`, payload hash, or required lineage value cannot be generated uniquely | critical | rejected |
 | DQ-CMN-008 | Delivery arrives after the contract's `late_after` interval | warning | accepted_with_warning and emit freshness evidence |
 | DQ-CMN-009 | Undeclared column is present | critical | block_batch until a compatible contract version is approved |
 | DQ-CMN-010 | Required column is absent | critical | block_batch |
+| DQ-CMN-011 | A different delivery contains the same natural key and same contract-declared version discriminator (`source_updated_at`, or `valid_from` for reference data) as an existing row but a different raw payload hash | critical | block_batch; retain both immutable payloads as collision evidence and do not overwrite or publish the new version |
 
 ## 4. Permitted automatic normalizations
 
@@ -63,8 +65,10 @@ Identifiers are never case-folded, truncated, padded, guessed, or cross-walked a
 - Currency is USD in version 1. Cross-currency records are rejected.
 - Payment and adjustment files store a positive `amount` and use `direction` to determine the sign: `credit` increases payment/adjustment applied to the account; `debit` reverses it.
 - `payer_payment`, `patient_payment`, `contractual_adjustment`, and `write_off` require `credit`; `refund` and `reversal` require `debit`.
+- Remittance files store a non-negative `total_payment_amount`; `direction: credit` makes the control positive and `direction: debit` makes it negative. A reversed remittance must point to one complete original-remittance key and exactly offset that original.
 - A payment cannot exceed the eligible billed or outstanding amount under the current source state unless its type is an explicitly linked refund/reversal.
-- Claim and claim-line amount equations use the exact fields and tolerance declared in their contracts.
+- Claims and claim lines separate payer-originated payments in `payer_paid_amount` from patient-originated payments in `patient_paid_amount`. `patient_responsibility_amount` is the payer-assigned allocation, not another payment, and patient paid cannot exceed that allocation.
+- Claim and claim-line amount equations use the exact fields and tolerance declared in their contracts: billed equals payer paid plus patient paid plus adjustment plus outstanding balance.
 - Empty nullable monetary fields are not treated as zero unless a downstream governed metric explicitly defines that behavior.
 
 ## 6. Correction and republication

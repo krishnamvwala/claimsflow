@@ -43,6 +43,7 @@ keys:
   natural_key: [source_system, payment_id]
   source_record_id: [payment_id]
 relationships:
+  - {fields: [reverses_payment_source_system, reverses_payment_id], target: payments.source_system+payment_id, required: false, match: exact_key, cardinality: zero_or_one}
   - {fields: [claim_source_system, claim_id, claim_submission_sequence], target: claims.source_system+claim_id+submission_sequence, required: true, match: exact_key, cardinality: exactly_one}
   - {fields: [claim_source_system, claim_id, claim_submission_sequence, claim_line_number], target: claim-lines.source_system+claim_id+submission_sequence+line_number, required: false, match: exact_key, cardinality: zero_or_one}
   - {fields: [remittance_source_system, remittance_id], target: remittances.source_system+remittance_id, required: false, match: exact_key, cardinality: zero_or_one}
@@ -64,6 +65,7 @@ schema:
   - {name: payment_date, type: DATE, required: true, nullable: false, description: Business-effective transaction date}
   - {name: posted_at, type: TIMESTAMP, required: true, nullable: false, description: Billing ledger posting instant}
   - {name: adjustment_reason_code, type: STRING, required: true, nullable: true, description: Required reference for adjustment write-off refund or reversal}
+  - {name: reverses_payment_source_system, type: STRING, required: true, nullable: true, description: Source system from the original payment delivery envelope for refund or reversal}
   - {name: reverses_payment_id, type: STRING, required: true, nullable: true, description: Original transaction identifier for refund or reversal}
   - {name: posting_status, type: STRING, required: true, nullable: false, description: Ledger status, allowed_values: [posted, reversed]}
   - {name: source_updated_at, type: TIMESTAMP, required: true, nullable: false, description: Source record version instant}
@@ -75,11 +77,11 @@ validation_rules:
   - {id: DQ-PAY-005, severity: error, disposition: quarantined, condition: payment_date is after posted_at}
   - {id: DQ-PAY-006, severity: error, disposition: quarantined, condition: payer_payment lacks remittance_source_system remittance_id or payer_id}
   - {id: DQ-PAY-007, severity: error, disposition: quarantined, condition: contractual_adjustment write_off refund or reversal lacks adjustment_reason_code}
-  - {id: DQ-PAY-008, severity: error, disposition: quarantined, condition: refund or reversal lacks a valid reverses_payment_id or exceeds the unreversed original amount}
+  - {id: DQ-PAY-008, severity: error, disposition: quarantined, condition: refund or reversal lacks a complete original-payment key the original does not resolve to a credit transaction for the same complete claim and optional line key or amount exceeds the unreversed original amount or a non-refund/reversal contains a reversal pointer}
   - {id: DQ-PAY-009, severity: error, disposition: quarantined, condition: signed transaction causes applied payment or adjustment to exceed eligible claim or line financial relationships}
   - {id: DQ-PAY-010, severity: warning, disposition: accepted_with_warning, condition: billing_spreadsheet source row is valid but arrives after the hourly freshness target}
   - {id: DQ-PAY-011, severity: error, disposition: quarantined, condition: transaction_type is payer_payment patient_payment contractual_adjustment or write_off and direction is not credit or transaction_type is refund or reversal and direction is not debit}
-  - {id: DQ-PAY-012, severity: error, disposition: quarantined, condition: exactly one of remittance_source_system and remittance_id is populated or exactly one of claim_line_number and claim_line_id is populated instead of both or neither}
+  - {id: DQ-PAY-012, severity: error, disposition: quarantined, condition: exactly one of remittance_source_system and remittance_id is populated exactly one of claim_line_number and claim_line_id is populated or exactly one of reverses_payment_source_system and reverses_payment_id is populated instead of both or neither}
 reconciliation:
   record_count: Exact parsed-row equality and disposition equality required
   amounts: [amount]

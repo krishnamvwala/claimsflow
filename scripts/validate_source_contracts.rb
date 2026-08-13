@@ -27,11 +27,27 @@ REQUIRED_DELIVERY = %w[
 REQUIRED_FIELD = %w[name type required nullable description].freeze
 REQUIRED_RULE = %w[id severity disposition condition].freeze
 REQUIRED_RELATIONSHIP = %w[fields target required match cardinality].freeze
-ENVELOPE_FIELDS = Set.new(%w[
-  batch_id source_system source_file_name source_file_checksum_sha256 source_row_number
-  source_record_id source_extract_at ingested_at contract_id contract_version
-  raw_payload_hash_sha256 processing_status
+ALLOWED_FIELD_KEYS = Set.new(REQUIRED_FIELD + %w[
+  allowed_values pattern minimum maximum minimum_exclusive
 ]).freeze
+ALLOWED_RELATIONSHIP_KEYS = Set.new(REQUIRED_RELATIONSHIP + %w[
+  as_of_field as_of_conversion mode
+]).freeze
+ENVELOPE_TYPES = {
+  "batch_id" => "STRING",
+  "source_system" => "STRING",
+  "source_file_name" => "STRING",
+  "source_file_checksum_sha256" => "STRING",
+  "source_row_number" => "INTEGER",
+  "source_record_id" => "STRING",
+  "source_extract_at" => "TIMESTAMP",
+  "ingested_at" => "TIMESTAMP",
+  "contract_id" => "STRING",
+  "contract_version" => "STRING",
+  "raw_payload_hash_sha256" => "STRING",
+  "processing_status" => "STRING"
+}.freeze
+ENVELOPE_FIELDS = ENVELOPE_TYPES.keys.to_set.freeze
 ALLOWED_TYPES = Set.new(%w[
   STRING INTEGER NUMERIC(18,2) NUMERIC(9,4) DATE TIMESTAMP BOOLEAN STRING_LIST
 ]).freeze
@@ -85,15 +101,63 @@ def validate_schema(schema, context, errors)
     require_keys(field, REQUIRED_FIELD, field_context, errors)
     next unless field.is_a?(Hash)
 
+    unsupported_keys = field.keys.to_set - ALLOWED_FIELD_KEYS
+    errors << "#{field_context} has unsupported schema keys: #{unsupported_keys.to_a.sort.join(', ')}" unless unsupported_keys.empty?
+
     name = field["name"]
+    type = field["type"]
     errors << "#{field_context} has an invalid name" unless name.is_a?(String) && name.match?(/\A[a-z][a-z0-9_]*\z/)
     errors << "#{context} duplicates field #{name}" if names.include?(name)
     names << name if name
-    types[name] = field["type"] if name
-    errors << "#{field_context} has unsupported type #{field['type']}" unless ALLOWED_TYPES.include?(field["type"])
+    types[name] = type if name
+    errors << "#{field_context} has unsupported type #{type}" unless ALLOWED_TYPES.include?(type)
     errors << "#{field_context} required must be boolean" unless [true, false].include?(field["required"])
     errors << "#{field_context} nullable must be boolean" unless [true, false].include?(field["nullable"])
     errors << "#{field_context} description must be non-empty" unless non_empty_string?(field["description"])
+
+    if field.key?("allowed_values")
+      values = field["allowed_values"]
+      valid_values = values.is_a?(Array) && !values.empty? && values.uniq.length == values.length
+      valid_values &&= case type
+                       when "STRING", "STRING_LIST"
+                         values.all? { |value| non_empty_string?(value) }
+                       when "INTEGER"
+                         values.all? { |value| value.is_a?(Integer) }
+                       when "NUMERIC(18,2)", "NUMERIC(9,4)"
+                         values.all? { |value| value.is_a?(Numeric) }
+                       when "BOOLEAN"
+                         values.all? { |value| [true, false].include?(value) }
+                       else
+                         false
+                       end
+      errors << "#{field_context} allowed_values must be a non-empty unique list compatible with #{type}" unless valid_values
+    end
+
+    if field.key?("pattern")
+      errors << "#{field_context} pattern is permitted only for STRING or STRING_LIST" unless %w[STRING STRING_LIST].include?(type)
+      if non_empty_string?(field["pattern"])
+        begin
+          Regexp.new(field["pattern"])
+        rescue RegexpError => e
+          errors << "#{field_context} pattern is invalid: #{e.message}"
+        end
+      else
+        errors << "#{field_context} pattern must be a non-empty string"
+      end
+    end
+
+    numeric_constraints = %w[minimum maximum minimum_exclusive].select { |key| field.key?(key) }
+    unless numeric_constraints.empty?
+      errors << "#{field_context} numeric constraints require INTEGER or NUMERIC type" unless ["INTEGER", "NUMERIC(18,2)", "NUMERIC(9,4)"].include?(type)
+      numeric_constraints.each do |key|
+        errors << "#{field_context} #{key} must be numeric" unless field[key].is_a?(Numeric)
+      end
+      errors << "#{field_context} cannot declare both minimum and minimum_exclusive" if field.key?("minimum") && field.key?("minimum_exclusive")
+      lower_key = field.key?("minimum_exclusive") ? "minimum_exclusive" : "minimum"
+      if field.key?(lower_key) && field.key?("maximum") && field[lower_key].is_a?(Numeric) && field["maximum"].is_a?(Numeric)
+        errors << "#{field_context} #{lower_key} must be less than maximum" unless field[lower_key] < field["maximum"]
+      end
+    end
   end
   {names: names, types: types}
 end
@@ -238,7 +302,7 @@ EXPECTED.each do |file_name, expected_family|
         end
         dataset_catalog[dataset_name] = {
           fields: names | ENVELOPE_FIELDS,
-          field_types: schema_result[:types],
+          field_types: schema_result[:types].merge(ENVELOPE_TYPES),
           natural_key: dataset["natural_key"]
         }
       end
@@ -252,7 +316,7 @@ EXPECTED.each do |file_name, expected_family|
     field_refs.merge(names)
     field_refs.merge(ENVELOPE_FIELDS)
     field_types.merge!(schema_result[:types])
-    ENVELOPE_FIELDS.each { |field| field_types[field] = "STRING" }
+    field_types.merge!(ENVELOPE_TYPES)
     %w[natural_key source_record_id].each do |key_type|
       declared = contract.dig("keys", key_type)
       if !declared.is_a?(Array) || declared.empty?
@@ -275,6 +339,9 @@ EXPECTED.each do |file_name, expected_family|
       require_keys(relationship, REQUIRED_RELATIONSHIP, relationship_context, errors)
       next unless relationship.is_a?(Hash)
 
+      unsupported_keys = relationship.keys.to_set - ALLOWED_RELATIONSHIP_KEYS
+      errors << "#{relationship_context} has unsupported relationship keys: #{unsupported_keys.to_a.sort.join(', ')}" unless unsupported_keys.empty?
+
       fields = relationship["fields"]
       if !fields.is_a?(Array) || fields.empty?
         errors << "#{relationship_context} fields must be a non-empty list"
@@ -292,6 +359,11 @@ EXPECTED.each do |file_name, expected_family|
         errors << "#{relationship_context} effective_at requires a declared as_of_field" unless non_empty_string?(as_of_field) && field_refs.include?(as_of_field)
       elsif relationship.key?("as_of_field")
         errors << "#{relationship_context} exact_key must not declare as_of_field"
+      end
+      if relationship["match"] != "effective_at" && relationship.key?("as_of_conversion")
+        errors << "#{relationship_context} as_of_conversion is permitted only for effective_at"
+      elsif relationship.key?("as_of_conversion") && relationship["as_of_conversion"] != "utc_date"
+        errors << "#{relationship_context} as_of_conversion must be utc_date when present"
       end
       if relationship.key?("mode") && relationship["mode"] != "every_list_member"
         errors << "#{relationship_context} mode must be every_list_member when present"
@@ -371,6 +443,7 @@ contract_records.each do |record|
     target_catalog[family] = {
       kind: :contract,
       fields: record[:fields],
+      field_types: record[:field_types],
       natural_key: contract.dig("keys", "natural_key")
     }
   end
@@ -405,6 +478,16 @@ contract_records.each do |record|
     source_fields = relationship["fields"].is_a?(Array) ? relationship["fields"] : []
     errors << "#{context} source and target key lengths differ" unless source_fields.length == parsed[:fields].length
 
+    source_fields.zip(parsed[:fields]).each do |source_field, target_field|
+      source_type = record[:field_types][source_field]
+      target_type = target_definition[:field_types][target_field]
+      next if source_type.nil? || target_type.nil?
+
+      compatible = source_type == target_type
+      compatible ||= relationship["mode"] == "every_list_member" && source_type == "STRING_LIST" && target_type == "STRING"
+      errors << "#{context} has incompatible relationship types #{source_field}:#{source_type} -> #{target_field}:#{target_type}" unless compatible
+    end
+
     if relationship["match"] == "exact_key"
       errors << "#{context} exact_key must target the complete natural key #{target_definition[:natural_key].join('+')}" unless parsed[:fields] == target_definition[:natural_key]
       expected_cardinality = relationship["required"] ? "exactly_one" : "zero_or_one"
@@ -416,6 +499,18 @@ contract_records.each do |record|
       errors << "#{context} effective_at target must have valid_from in its natural key" unless natural_key.count("valid_from") == 1
       errors << "#{context} effective_at target must declare valid_from and valid_to" unless target_definition[:fields].include?("valid_from") && target_definition[:fields].include?("valid_to")
       errors << "#{context} effective_at must target the complete business key #{business_key.join('+')}" unless parsed[:fields] == business_key
+      valid_from_type = target_definition[:field_types]["valid_from"]
+      valid_to_type = target_definition[:field_types]["valid_to"]
+      errors << "#{context} effective interval endpoints must use the same DATE or TIMESTAMP type" unless valid_from_type == valid_to_type && %w[DATE TIMESTAMP].include?(valid_from_type)
+      as_of_type = record[:field_types][relationship["as_of_field"]]
+      errors << "#{context} as_of_field must be DATE or TIMESTAMP" unless %w[DATE TIMESTAMP].include?(as_of_type)
+      if as_of_type == valid_from_type
+        errors << "#{context} must not declare as_of_conversion when interval and as-of types match" if relationship.key?("as_of_conversion")
+      elsif as_of_type == "TIMESTAMP" && valid_from_type == "DATE"
+        errors << "#{context} TIMESTAMP to DATE lookup requires as_of_conversion utc_date" unless relationship["as_of_conversion"] == "utc_date"
+      elsif as_of_type && valid_from_type
+        errors << "#{context} cannot convert #{as_of_type} as_of_field to #{valid_from_type} interval"
+      end
       expected_cardinality = if relationship["mode"] == "every_list_member"
                                relationship["required"] ? "exactly_one_per_list_member" : "zero_or_one_per_list_member"
                              else
@@ -429,6 +524,16 @@ end
 reference_rules = contract_records.find { |record| record[:contract]["source_family"] == "reference-data" }&.dig(:contract, "validation_rules").to_a.map { |rule| rule["id"] }.to_set
 required_effective_rules = Set.new(%w[DQ-REF-003 DQ-REF-004 DQ-REF-005])
 errors << "reference-data.yml must enforce valid intervals, non-overlap, and one current version" unless required_effective_rules.subset?(reference_rules)
+
+validation_policy = File.read(File.join(ROOT, "docs", "source-data-contracts", "validation-policy.md"))
+duplicate_policy = validation_policy.lines.find { |line| line.start_with?("| DQ-CMN-004 |") }.to_s
+unless duplicate_policy.match?(/\| warning \| duplicate_no_op(?:\s|;|\|)/) && duplicate_policy.match?(/no (?:record processing|records processed)/i)
+  errors << "validation policy DQ-CMN-004 must use warning/duplicate_no_op and terminate before record processing"
+end
+collision_policy = validation_policy.lines.find { |line| line.start_with?("| DQ-CMN-011 |") }.to_s
+unless collision_policy.match?(/same natural key/i) && collision_policy.match?(/same.*version discriminator/i) && collision_policy.match?(/different.*payload hash/i) && collision_policy.match?(/\| critical \| block_batch(?:\s|;|\|)/)
+  errors << "validation policy DQ-CMN-011 must block same-key same-version different-payload collisions"
+end
 
 documentation_paths = [
   File.join(ROOT, "README.md"),

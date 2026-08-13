@@ -82,7 +82,7 @@ Source files do not supply the following fields. ClaimsFlow adds them from the v
 | `contract_id` | STRING | Immutable contract identifier from this registry |
 | `contract_version` | STRING | Semantic version used to parse the row |
 | `raw_payload_hash_sha256` | STRING | Stable hash of the canonical source-shaped row |
-| `processing_status` | STRING | `registered`, `validated`, `published`, `quarantined`, `rejected`, or `failed` |
+| `processing_status` | STRING | `registered`, `validated`, `published`, `quarantined`, `rejected`, `failed`, or delivery-level `duplicate_no_op` |
 
 `(batch_id, source_row_number)` must be unique. Every raw and trusted record must retain a non-null path through these fields to exactly one registered delivery and original source row. Raw payload values and hashes are immutable; verified corrections create new audit evidence and never overwrite raw evidence.
 
@@ -104,9 +104,9 @@ Contract `required` means the column must exist. Contract `nullable: false` mean
 ## 6. Identity, relationship, and history rules
 
 - Natural keys are evaluated after only the approved deterministic normalizations in the validation policy.
-- A duplicate natural key within a file is invalid. A key repeated across deliveries is a new source version only when its declared update timestamp or submission sequence advances.
+- A duplicate natural key within a file is invalid. An identical accepted source-identity/checksum replay receives the delivery-level `duplicate_no_op` status and stops before rows are processed or republished. A key repeated across different deliveries is a new source version only when its declared update timestamp or submission sequence advances. The version discriminator is `source_updated_at` for incremental record contracts and `valid_from` for reference data; claim and claim-line submission sequences are already part of their natural keys. The same natural key and version discriminator with a different payload hash is a collision under `DQ-CMN-011`; the batch is blocked and neither payload is overwritten.
 - An `exact_key` relationship maps its source fields, in order, to every field in the target contract's natural key, including lineage-envelope fields such as `source_system`. Required exact-key relationships resolve to exactly one parent; optional compound keys must be either entirely empty or resolve to one parent.
-- An `effective_at` relationship maps its source fields to the complete reference business key and uses `as_of_field` to require exactly one version where `valid_from <= as_of_field < valid_to`, treating empty `valid_to` as current. Reference business identifiers are conformed across delivery sources; overlapping or duplicate effective versions are invalid.
+- An `effective_at` relationship maps its source fields to the complete reference business key and uses `as_of_field` to require exactly one version where `valid_from <= as_of_field < valid_to`, treating empty `valid_to` as current. When a TIMESTAMP as-of field targets DATE validity boundaries, the relationship must declare `as_of_conversion: utc_date`; lookup uses the timestamp's UTC calendar date after timestamp normalization. Reference business identifiers are conformed across delivery sources; overlapping or duplicate effective versions are invalid.
 - List relationships apply the same effective-date rule to every list member.
 - Claims link to a unique eligibility response by source system and eligibility ID. The response must match patient, payer, and plan, be confirmed active, and cover the complete service interval.
 - Missing required claim, patient, payer, denial, payment, or appeal identity is never inferred.
@@ -115,7 +115,7 @@ Contract `required` means the column must exist. Contract `nullable: false` mean
 
 ## 7. Reconciliation rules
 
-Every batch records raw, accepted, accepted-with-warning, quarantined, and rejected counts. The four dispositions must equal the raw count with no unexplained records.
+Every processable batch records raw, accepted, accepted-with-warning, quarantined, and rejected counts. The four record dispositions must equal the raw count with no unexplained records. An identical duplicate delivery records `duplicate_no_op`, creates zero new raw rows, and is excluded from the record-disposition equation.
 
 Financial source families additionally record the contract-declared control totals. Exact equality is required for source-to-raw reconciliation. Source-to-curated reconciliation uses the signed transaction convention and tolerance later governed by the metric dictionary; until that artifact is approved, the contract default is an absolute variance of `0.00` USD.
 

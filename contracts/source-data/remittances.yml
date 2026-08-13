@@ -21,7 +21,7 @@ synthetic_only: true
 fixture_profile:
   baseline_rows_per_month: 4000
   invalid_fixture_rate: 0.02
-  required_scenarios: [eft, check, zero_payment_remit, reversal, duplicate_trace, unknown_payer, control_total_mismatch]
+  required_scenarios: [eft, check, zero_payment_remit, full_reversal, incomplete_reversal_pointer, duplicate_trace, unknown_payer, control_total_mismatch]
 owners: {business: Revenue Cycle Finance, technical: ClaimsFlow Data Engineering}
 delivery:
   format: csv
@@ -39,12 +39,16 @@ keys:
   source_record_id: [remittance_id]
 relationships:
   - {fields: [payer_id], target: reference-data.payers.payer_id, required: true, match: effective_at, as_of_field: remittance_date, cardinality: exactly_one_effective}
+  - {fields: [reverses_remittance_source_system, reverses_remittance_id], target: remittances.source_system+remittance_id, required: false, match: exact_key, cardinality: zero_or_one}
 schema:
   - {name: remittance_id, type: STRING, required: true, nullable: false, description: Stable synthetic remittance identifier}
+  - {name: reverses_remittance_source_system, type: STRING, required: true, nullable: true, description: Source system from the original remittance delivery envelope for a full reversal}
+  - {name: reverses_remittance_id, type: STRING, required: true, nullable: true, description: Original remittance identifier for a full reversal}
   - {name: payer_id, type: STRING, required: true, nullable: false, description: Payer reference}
   - {name: source_control_number, type: STRING, required: true, nullable: false, description: Source remittance control identifier}
   - {name: payment_trace_number, type: STRING, required: true, nullable: false, description: Synthetic EFT or check trace reference}
   - {name: payment_method, type: STRING, required: true, nullable: false, description: Remittance payment method, allowed_values: [eft, check, virtual_card, none]}
+  - {name: direction, type: STRING, required: true, nullable: false, description: Sign convention for the control total, allowed_values: [credit, debit]}
   - {name: remittance_date, type: DATE, required: true, nullable: false, description: Payer remittance date}
   - {name: received_at, type: TIMESTAMP, required: true, nullable: false, description: Clearinghouse receipt instant}
   - {name: total_payment_amount, type: "NUMERIC(18,2)", required: true, nullable: false, description: Remittance payment control total in USD, minimum: 0.00}
@@ -58,10 +62,14 @@ validation_rules:
   - {id: DQ-REM-003, severity: error, disposition: quarantined, condition: payer_id does not resolve at remittance_date}
   - {id: DQ-REM-004, severity: error, disposition: quarantined, condition: total_payment_amount is negative or currency_code is not USD}
   - {id: DQ-REM-005, severity: error, disposition: quarantined, condition: remittance_date is after received_at or implausibly before the configured source window}
-  - {id: DQ-REM-006, severity: critical, disposition: block_batch, condition: accepted related payment count or signed amount does not equal claim_transaction_count or total_payment_amount}
+  - {id: DQ-REM-006, severity: critical, disposition: block_batch, condition: accepted related payment count or signed amount does not equal claim_transaction_count or direction-adjusted total_payment_amount}
+  - {id: DQ-REM-007, severity: error, disposition: quarantined, condition: received or posted remittance does not use credit direction or reversed remittance does not use debit direction}
+  - {id: DQ-REM-008, severity: error, disposition: quarantined, condition: reversed remittance lacks a complete original-remittance key or the original does not resolve to a credit remittance for the same payer currency count and amount or a non-reversed remittance contains a reversal pointer}
+  - {id: DQ-REM-009, severity: error, disposition: quarantined, condition: exactly one of reverses_remittance_source_system and reverses_remittance_id is populated instead of both or neither}
 reconciliation:
   record_count: Exact parsed-row equality and disposition equality required
   amounts: [total_payment_amount]
-  child_control: Related accepted payment rows and signed amounts must equal remittance controls
+  signed_control: credit total_payment_amount is positive and debit total_payment_amount is negative
+  child_control: Related accepted payment count and signed amounts must equal claim_transaction_count and the direction-adjusted control; a reversed remittance must exactly offset its linked original
   tolerance_usd: 0.00
 freshness: {event_field: received_at, maximum_source_age: PT36H}

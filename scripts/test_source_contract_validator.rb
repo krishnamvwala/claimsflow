@@ -29,6 +29,11 @@ def mutate_contract(root, file_name)
   File.write(path, YAML.dump(contract))
 end
 
+def mutate_validation_policy(root)
+  path = File.join(root, "docs", "source-data-contracts", "validation-policy.md")
+  File.write(path, yield(File.read(path)))
+end
+
 def assert_failure(label, expected_message)
   with_repository_copy do |root|
     yield root
@@ -57,8 +62,8 @@ puts "PASS baseline contracts"
 results = []
 results << assert_failure("incomplete direct parent key", "exact_key must target the complete natural key") do |root|
   mutate_contract(root, "payments.yml") do |contract|
-    contract["relationships"][0]["target"] = "claims.claim_id"
-    contract["relationships"][0]["fields"] = ["claim_id"]
+    contract["relationships"][1]["target"] = "claims.claim_id"
+    contract["relationships"][1]["fields"] = ["claim_id"]
   end
 end
 
@@ -79,6 +84,34 @@ end
 
 results << assert_failure("blank grain", "grain must be a non-empty string") do |root|
   mutate_contract(root, "denials.yml") { |contract| contract["grain"] = "  " }
+end
+
+results << assert_failure("unknown schema constraint", "unsupported schema keys: minimun") do |root|
+  mutate_contract(root, "claims.yml") do |contract|
+    billed_amount = contract["schema"].find { |field| field["name"] == "billed_amount" }
+    billed_amount["minimun"] = 0
+  end
+end
+
+results << assert_failure("incompatible relationship types", "incompatible relationship types") do |root|
+  mutate_contract(root, "payments.yml") do |contract|
+    sequence = contract["schema"].find { |field| field["name"] == "claim_submission_sequence" }
+    sequence["type"] = "STRING"
+  end
+end
+
+results << assert_failure("missing timestamp date conversion", "TIMESTAMP to DATE lookup requires as_of_conversion utc_date") do |root|
+  mutate_contract(root, "eligibility.yml") { |contract| contract["relationships"][0].delete("as_of_conversion") }
+end
+
+results << assert_failure("publishable duplicate replay policy", "DQ-CMN-004 must use warning/duplicate_no_op") do |root|
+  mutate_validation_policy(root) do |policy|
+    policy.sub("duplicate_no_op; no records processed or republished", "accepted_with_warning; no records processed or republished")
+  end
+end
+
+results << assert_failure("missing cross-delivery collision policy", "DQ-CMN-011 must block same-key same-version different-payload collisions") do |root|
+  mutate_validation_policy(root) { |policy| policy.sub("| DQ-CMN-011 |", "| DQ-CMN-099 |") }
 end
 
 unless results.all?

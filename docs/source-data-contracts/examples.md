@@ -16,7 +16,7 @@ These examples demonstrate how the contracts connect. They are synthetic and ill
   "source_extract_at": "2026-08-13T14:00:00Z",
   "delivered_at": "2026-08-13T14:04:00Z",
   "declared_record_count": 4167,
-  "declared_control_totals": "{\"adjustment_amount\":\"860125.00\",\"billed_amount\":\"4521680.00\",\"outstanding_balance\":\"1834055.00\",\"paid_amount\":\"1827500.00\"}",
+  "declared_control_totals": "{\"adjustment_amount\":\"860125.00\",\"billed_amount\":\"4521680.00\",\"outstanding_balance\":\"1834055.00\",\"patient_paid_amount\":\"200000.00\",\"payer_paid_amount\":\"1627500.00\"}",
   "synthetic_generator_id": "claimsflow-synth",
   "synthetic_generator_version": "1.0.0",
   "synthetic_seed": 8132026,
@@ -24,7 +24,7 @@ These examples demonstrate how the contracts connect. They are synthetic and ill
 }
 ```
 
-Before ingestion, ClaimsFlow verifies the approved generator, contract compatibility, file-name pattern, checksum, declared row count, and control-total keys. A repeated source/checksum pair is audited as a duplicate and is not republished.
+Before ingestion, ClaimsFlow verifies the approved generator, contract compatibility, file-name pattern, checksum, declared row count, and control-total keys. A repeated accepted source/checksum pair is audited as `duplicate_no_op`; no rows are processed or republished. A different delivery with the same natural key and version but a different payload hash blocks the batch as collision evidence.
 
 ## 2. Connected synthetic business scenario
 
@@ -34,8 +34,8 @@ Before ingestion, ClaimsFlow verifies the approved generator, contract compatibi
 | Eligibility | `ELG-SYN-90122` for patient `PAT-SYN-44091` | Plan belongs to payer and coverage spans the service date |
 | Claim | `synth_ehr_north + CLM-SYN-800120 + 1` | Unique eligibility response, patient, payer, plan, provider, and facility resolve for the complete service interval |
 | Claim line | `synth_ehr_north + CLM-SYN-800120 + 1 + 1` | Complete parent claim key plus effective diagnosis and procedure references resolve |
-| Remittance | `synth_payer_014 + REM-SYN-5520` | Payer and payment control total resolve |
-| Payment | `PMT-SYN-991102` | Complete remittance, claim, and optional claim-line keys resolve |
+| Remittance | `synth_payer_014 + REM-SYN-5520` | Payer and signed payment control total resolve; a full reversal points to and offsets one original remittance |
+| Payment | `synth_billing_north + PMT-SYN-991102` | Complete remittance, claim, optional claim-line, and original-payment reversal keys resolve |
 | Denial | `synth_payer_014 + DEN-SYN-8830` | Complete claim/line keys, payer, reason, exposure, and deadline resolve |
 | Appeal | `APL-SYN-2201` | Complete denial and claim keys resolve; deadline matches the denial and human events are ordered |
 
