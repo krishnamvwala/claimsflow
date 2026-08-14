@@ -303,12 +303,13 @@ This requirements document is ready for baseline approval when:
 - Open formula, schema, scoring, and architecture details are routed to named Phase 0 artifacts rather than silently assumed.
 - The requirements contain no claims of real healthcare, financial, or operational outcomes.
 
-## 14. Next Phase 0 artifacts
+## 14. Phase 0 artifact status
 
 Completed Phase 0 artifacts:
 
 1. [Acceptance-criteria matrix](acceptance-criteria.md).
 2. [Source-data contracts](source-data-contracts/README.md).
 3. [Governed metric dictionary](metric-dictionary/README.md).
+4. [Architecture baseline and decision records](architecture/README.md).
 
-Next: create the initial architecture decision records for BigQuery, dbt, Airflow, Python, Power BI, security, and deployment boundaries.
+Next: begin Phase 1 implementation scaffolding under the accepted architecture boundaries.

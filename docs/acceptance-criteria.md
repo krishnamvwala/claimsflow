@@ -227,6 +227,6 @@ This artifact is ready for baseline approval when:
 - The final customer demo is represented by cross-phase end-to-end scenarios.
 - The matrix contains no claim that synthetic results prove real healthcare or financial outcomes.
 
-## 19. Next Phase 0 artifact
+## 19. Phase 0 artifact status
 
-Create the initial architecture decision records for BigQuery, dbt, Airflow, Python, Power BI, security, and deployment boundaries. The governed metric dictionary is maintained in [`docs/metric-dictionary`](metric-dictionary/README.md).
+The initial architecture decisions for BigQuery, dbt, Airflow, Python, Power BI, security, and deployment are accepted in the [architecture baseline](architecture/README.md). Next: begin Phase 1 implementation scaffolding under those decisions. The governed metric dictionary remains in [`docs/metric-dictionary`](metric-dictionary/README.md).
