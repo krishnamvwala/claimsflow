@@ -134,6 +134,6 @@ The dictionary is ready for baseline approval when:
 - The metric validator, its negative regression suite, link checks, and repository whitespace checks pass.
 - Devin reviews the complete local diff before it is pushed.
 
-## 13. Next Phase 0 artifact
+## 13. Phase 0 artifact status
 
-Create the initial architecture decision records for the BigQuery data layers, dbt modeling and semantic strategy, Airflow orchestration boundary, Python service responsibilities, Power BI connectivity, security boundary, and deployment approach.
+The metric contracts feed the accepted [architecture baseline](../architecture/README.md), including dbt ownership and Power BI consumption rules. Next: begin Phase 1 implementation scaffolding.

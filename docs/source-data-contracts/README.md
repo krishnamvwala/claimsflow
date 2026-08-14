@@ -159,6 +159,6 @@ This artifact is ready for baseline approval when:
 - The automated validator passes.
 - No contract permits real patient or customer data or silent correction of ambiguous values.
 
-## 11. Next Phase 0 artifact
+## 11. Phase 0 artifact status
 
-Create the initial architecture decision records for BigQuery, dbt, Airflow, Python, Power BI, security, and deployment boundaries. The governed metric dictionary is maintained in the [metric-dictionary documentation](../metric-dictionary/README.md).
+The source contracts feed the accepted [architecture baseline](../architecture/README.md), and the governed formulas remain in the [metric-dictionary documentation](../metric-dictionary/README.md). Next: begin Phase 1 implementation scaffolding.
