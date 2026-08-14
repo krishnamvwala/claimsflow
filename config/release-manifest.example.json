@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "release_version": "0.1.0",
+  "git_commit": "0000000000000000000000000000000000000000",
+  "environment": "local",
+  "synthetic_only": true,
+  "dependency_locks": [
+    "uv.lock",
+    "infra/terraform/environments/dev-demo/.terraform.lock.hcl"
+  ],
+  "component_versions": {
+    "python": "3.12",
+    "dbt_core": "1.12.2",
+    "dbt_bigquery": "1.12.0",
+    "airflow": "3.3.1",
+    "terraform": "1.15.8",
+    "google_provider": "7.44.0"
+  },
+  "contract_version": "1.0.0",
+  "dictionary_version": "1.0.0",
+  "dbt_artifacts": [],
+  "generator_version": "not-implemented",
+  "included_batch_ids": [],
+  "known_limitations": [
+    "SYNTHETIC DATA ONLY — NOT FOR PRODUCTION OR CLINICAL/BILLING USE",
+    "Phase 1 provides project scaffolding; ingestion and analytical models are not implemented."
+  ],
+  "approved_by": "local-development-only",
+  "approved_at_utc": "2026-08-14T00:00:00Z"
+}

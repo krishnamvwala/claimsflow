@@ -1,0 +1,533 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+
+ROOT = File.expand_path("..", __dir__)
+
+REQUIRED_FILES = %w[
+  .dockerignore
+  .env.example
+  .gitignore
+  .python-version
+  Makefile
+  README.md
+  analytics/dbt/README.md
+  analytics/dbt/dbt_project.yml
+  analytics/dbt/macros/generate_schema_name.sql
+  analytics/dbt/models/staging/README.md
+  analytics/dbt/models/intermediate/README.md
+  analytics/dbt/models/curated/README.md
+  analytics/dbt/models/semantic/README.md
+  analytics/dbt/models/operational/README.md
+  compose.yaml
+  config/dbt/profiles.yml
+  config/release-manifest.example.json
+  config/release-manifest.schema.json
+  docs/development/README.md
+  docs/development/component-inventory.md
+  infra/terraform/environments/dev-demo/README.md
+  infra/terraform/environments/dev-demo/.terraform.lock.hcl
+  infra/terraform/environments/dev-demo/main.tf
+  infra/terraform/environments/dev-demo/terraform.tfvars.example
+  infra/terraform/environments/dev-demo/versions.tf
+  infra/terraform/environments/local/README.md
+  infra/terraform/environments/local/main.tf
+  infra/terraform/environments/local/versions.tf
+  infra/terraform/modules/foundation/README.md
+  infra/terraform/modules/foundation/main.tf
+  infra/terraform/modules/foundation/variables.tf
+  infra/terraform/modules/foundation/versions.tf
+  orchestration/airflow/Dockerfile
+  orchestration/airflow/README.md
+  orchestration/airflow/dags/claimsflow_batch.py
+  orchestration/airflow/policy/validate_dag.py
+  pyproject.toml
+  src/claimsflow/cli.py
+  src/claimsflow/config.py
+  src/claimsflow/logging_config.py
+  tests/unit/test_cli.py
+  tests/unit/test_config.py
+  tests/unit/test_logging_config.py
+  tests/unit/test_release_manifest.py
+  uv.lock
+  .github/workflows/project-foundation.yml
+].freeze
+
+DBT_LAYERS = %w[staging intermediate curated semantic operational].freeze
+DATASET_LAYERS = %w[raw validated quarantine curated semantic operational audit].freeze
+WORKLOAD_ACCOUNTS = %w[ingestion transformation orchestration bi auditor deployment].freeze
+DAG_TASKS = %w[
+  register_delivery
+  verify_landing_object
+  load_raw
+  validate_batch
+  build_candidate
+  reconcile
+  evaluate_publication_gates
+  advance_publication
+  refresh_bi
+  evaluate_alerts
+].freeze
+AIRFLOW_IMAGE = "apache/airflow:3.3.1-python3.12@sha256:b01a795dfbd113bbbfdf3ee169b8f27e9a0090ccef105f1a452b3594a11ed316"
+ACTION_PINS = {
+  "actions/checkout" => "3d3c42e5aac5ba805825da76410c181273ba90b1",
+  "ruby/setup-ruby" => "95ef2b042f9d7a56d8268cba8559e2842e2ad01b",
+  "astral-sh/setup-uv" => "ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d",
+  "hashicorp/setup-terraform" => "dfe3c3f87815947d99a8997f908cb6525fc44e9e",
+  "gitleaks/gitleaks-action" => "e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e",
+  "actions/dependency-review-action" => "a1d282b36b6f3519aa1f3fc636f609c47dddb294"
+}.freeze
+GENERATED_PATH_COMPONENTS = %w[
+  .mypy_cache
+  .pytest_cache
+  .ruff_cache
+  .terraform
+  .venv
+  __pycache__
+  db
+  dbt_packages
+  logs
+  target
+].freeze
+CI_PATHS = %w[
+  .env.example
+  .python-version
+  README.md
+  analytics/dbt/**
+  compose.yaml
+  config/**
+  docs/development/**
+  infra/terraform/**
+  orchestration/airflow/**
+  pyproject.toml
+  src/**
+  tests/**
+  uv.lock
+].freeze
+
+def relative(path)
+  path.delete_prefix("#{ROOT}/")
+end
+
+def read_file(path, errors)
+  absolute = File.join(ROOT, path)
+  unless File.file?(absolute)
+    errors << "Missing required scaffold file: #{path}"
+    return ""
+  end
+  File.read(absolute)
+end
+
+def require_text(content, expected, context, errors)
+  errors << "#{context} must contain #{expected.inspect}" unless content.include?(expected)
+end
+
+def reject_text(content, prohibited, context, errors)
+  errors << "#{context} must not contain #{prohibited.inspect}" if content.downcase.include?(prohibited.downcase)
+end
+
+errors = []
+
+REQUIRED_FILES.each do |path|
+  errors << "Missing required scaffold file: #{path}" unless File.file?(File.join(ROOT, path))
+end
+
+python_version = read_file(".python-version", errors).strip
+errors << ".python-version must pin Python 3.12" unless python_version == "3.12"
+
+pyproject = read_file("pyproject.toml", errors)
+[
+  'requires-python = ">=3.12,<3.13"',
+  '"mypy==2.3.0"',
+  '"jsonschema[format]==4.26.0"',
+  '"types-jsonschema==4.26.0.20260518"',
+  '"pytest==9.1.1"',
+  '"ruff==0.16.3"',
+  '"google-cloud-bigquery==3.43.0"',
+  '"google-cloud-storage==3.1.1"',
+  '"dbt-bigquery==1.12.0"'
+].each { |text| require_text(pyproject, text, "pyproject.toml", errors) }
+
+dependency_lines = pyproject.lines.select { |line| line.strip.match?(/\A"[a-z0-9][^\"]+",\z/i) }
+dependency_lines.each do |line|
+  next unless line.include?(">=") || line.include?("~=") || line.include?("*")
+
+  errors << "pyproject.toml dependency entries must use exact pins: #{line.strip}"
+end
+
+environment = read_file(".env.example", errors)
+require_text(environment, "CLAIMSFLOW_SYNTHETIC_ONLY=true", ".env.example", errors)
+require_text(environment, "CLAIMSFLOW_GCP_PROJECT=\n", ".env.example", errors)
+require_text(environment, "CLAIMSFLOW_MAXIMUM_BYTES_BILLED=1073741824", ".env.example", errors)
+
+config = read_file("src/claimsflow/config.py", errors)
+require_text(config, 'SUPPORTED_ENVIRONMENTS = frozenset({"local", "dev-demo"})', "Python configuration", errors)
+require_text(config, 'synthetic_flag != "true"', "Python configuration", errors)
+require_text(config, "real data is prohibited", "Python configuration", errors)
+require_text(config, "maximum_bytes_billed <= 0", "Python configuration", errors)
+require_text(config, '"local": 1_073_741_824', "Python configuration", errors)
+require_text(config, '"dev-demo": 10_737_418_240', "Python configuration", errors)
+require_text(config, "maximum_bytes_billed > environment_limit", "Python configuration", errors)
+
+logging_config = read_file("src/claimsflow/logging_config.py", errors)
+%w[environment_id run_id task_id batch_id publication_id rule_id code_version].each do |field|
+  require_text(logging_config, %("#{field}"), "structured logger", errors)
+end
+reject_text(logging_config, '"claim_payload"', "structured logger", errors)
+
+adapter_boundary = read_file("src/claimsflow/adapters/README.md", errors)
+require_text(adapter_boundary, "No external writes are implemented in Phase 1", "adapter boundary", errors)
+require_text(adapter_boundary, "dbt", "adapter boundary", errors)
+
+dbt_project = read_file("analytics/dbt/dbt_project.yml", errors)
+DBT_LAYERS.each do |layer|
+  require_text(dbt_project, "    #{layer}:\n", "dbt_project.yml", errors)
+  require_text(dbt_project, "      +schema: #{layer}", "dbt_project.yml", errors)
+end
+
+dbt_readme = read_file("analytics/dbt/README.md", errors)
+require_text(dbt_readme, "Staging models may read only validated relations", "dbt README", errors)
+reject_text(dbt_project, "raw_source", "dbt_project.yml", errors)
+if dbt_project.match?(/curated:\s*\n\s+\+materialized:\s*table/)
+  errors << "dbt Phase 1 publication boundary must prohibit curated table models"
+end
+
+sql_models = Dir.glob(File.join(ROOT, "analytics/dbt/models/**/*.sql"))
+unless sql_models.empty?
+  errors << "dbt Phase 1 publication boundary must prohibit SQL models: #{sql_models.map { |path| relative(path) }.join(', ')}"
+end
+
+dbt_schema_macro = read_file("analytics/dbt/macros/generate_schema_name.sql", errors)
+{
+  "'staging': 'claimsflow_curated'" => "private staging physical dataset",
+  "'intermediate': 'claimsflow_curated'" => "private intermediate physical dataset",
+  "'curated': 'claimsflow_curated'" => "curated physical dataset",
+  "'semantic': 'claimsflow_semantic'" => "semantic physical dataset",
+  "'operational': 'claimsflow_operational'" => "operational physical dataset",
+  "exceptions.raise_compiler_error" => "fail-closed unapproved-schema policy"
+}.each do |text, label|
+  errors << "dbt dev/demo schema mapping must declare #{label}" unless dbt_schema_macro.include?(text)
+end
+
+dbt_profile = read_file("config/dbt/profiles.yml", errors)
+require_text(dbt_profile, "method: oauth", "dbt profile", errors)
+require_text(dbt_profile, "maximum_bytes_billed: 1073741824", "dbt profile", errors)
+require_text(
+  dbt_profile,
+  "dataset: \"{{ env_var('CLAIMSFLOW_DBT_DATASET', 'claimsflow_curated') }}\"",
+  "dbt dev/demo profile",
+  errors
+)
+%w[keyfile keyfile_json private_key client_secret password].each do |secret_method|
+  reject_text(dbt_profile, secret_method, "dbt profile", errors)
+end
+
+compose = read_file("compose.yaml", errors)
+require_text(compose, "AIRFLOW_IMAGE: #{AIRFLOW_IMAGE}", "compose.yaml", errors)
+require_text(compose, 'CLAIMSFLOW_SYNTHETIC_ONLY: "true"', "compose.yaml", errors)
+require_text(compose, "command: standalone", "compose.yaml", errors)
+require_text(compose, '"127.0.0.1:8080:8080"', "compose.yaml", errors)
+%w[GOOGLE_APPLICATION_CREDENTIALS service_account.json private_key client_secret].each do |secret_value|
+  reject_text(compose, secret_value, "compose.yaml", errors)
+end
+
+dockerfile = read_file("orchestration/airflow/Dockerfile", errors)
+require_text(dockerfile, "ARG AIRFLOW_IMAGE=#{AIRFLOW_IMAGE}", "Airflow Dockerfile", errors)
+require_text(dockerfile, "USER airflow", "Airflow Dockerfile", errors)
+reject_text(dockerfile, "pip install", "Airflow Dockerfile", errors)
+
+dockerignore = read_file(".dockerignore", errors)
+%w[
+  .env
+  .env.*
+  **/*.tfstate
+  **/*.tfvars
+  **/*.tfvars.json
+  **/*.auto.tfvars
+  **/*.auto.tfvars.json
+  !**/*.tfvars.example
+  orchestration/airflow/db
+].each do |entry|
+  require_text(dockerignore, entry, ".dockerignore", errors)
+end
+gitignore = read_file(".gitignore", errors)
+require_text(gitignore, "orchestration/airflow/db/", ".gitignore", errors)
+require_text(gitignore, "config/dbt/.user.yml", ".gitignore", errors)
+%w[*.tfvars *.tfvars.json *.auto.tfvars *.auto.tfvars.json !*.tfvars.example].each do |entry|
+  require_text(gitignore, entry, ".gitignore Terraform variable policy", errors)
+end
+
+dag = read_file("orchestration/airflow/dags/claimsflow_batch.py", errors)
+task_declarations = dag.scan(/^    ([a-z_]+) = EmptyOperator\(\s*task_id="([a-z_]+)"/m)
+declared_variables = task_declarations.map(&:first)
+declared_task_ids = task_declarations.map(&:last)
+errors << "Airflow DAG must declare exactly the governed task IDs" unless declared_task_ids == DAG_TASKS
+errors << "Airflow DAG task variables must match their task IDs" unless task_declarations.all? { |variable, task_id| variable == task_id }
+
+chain = dag[/^    \(\n(?<body>.*?)^    \)$/m, :body]
+chain_tasks = chain&.scan(/^        (?:>> )?([a-z_]+)$/)&.flatten
+errors << "Airflow DAG must declare the exact fail-closed dependency chain" unless chain_tasks == DAG_TASKS
+{
+  "schedule=None" => "manual Phase 1 schedule",
+  "catchup=False" => "disabled catchup",
+  "max_active_runs=1" => "bounded active runs",
+  "max_active_tasks=4" => "bounded active tasks",
+  '"execution_timeout"' => "task timeout",
+  '"on_failure_callback"' => "failure callback",
+  '"retry_exponential_backoff"' => "retry backoff",
+  '"trigger_rule": "all_success"' => "fail-closed trigger rule",
+  "retries=0" => "non-blind publication retry policy"
+}.each do |text, label|
+  errors << "Airflow DAG must declare #{label}" unless dag.include?(text)
+end
+unless dag.match?(/advance_publication = EmptyOperator\(\s*task_id="advance_publication",\s*retries=0,\s*\)/m)
+  errors << "Airflow DAG must scope the zero-retry publication policy to advance_publication"
+end
+require_text(dag, "never serialize XCom values or row payloads", "Airflow failure callback", errors)
+
+dag_policy = read_file("orchestration/airflow/policy/validate_dag.py", errors)
+{
+  "DagBag" => "runtime DAG loading",
+  "actual_edges != EXPECTED_EDGES" => "exact effective-edge validation",
+  "task.trigger_rule != TriggerRule.ALL_SUCCESS" => "effective fail-closed trigger validation",
+  'task.task_id == "advance_publication"' => "effective publication retry validation",
+  "task.on_failure_callback is None" => "effective failure-callback validation"
+}.each do |text, label|
+  errors << "Airflow runtime policy must declare #{label}" unless dag_policy.include?(text)
+end
+
+terraform_versions = read_file("infra/terraform/modules/foundation/versions.tf", errors)
+require_text(terraform_versions, 'required_version = "~> 1.15.0"', "foundation versions", errors)
+require_text(terraform_versions, 'version = "= 7.44.0"', "foundation versions", errors)
+
+terraform_foundation = read_file("infra/terraform/modules/foundation/main.tf", errors)
+terraform_variables = read_file("infra/terraform/modules/foundation/variables.tf", errors)
+DATASET_LAYERS.each do |layer|
+  require_text(terraform_foundation, %(    "#{layer}",), "foundation datasets", errors)
+end
+WORKLOAD_ACCOUNTS.each do |account|
+  unless terraform_foundation.match?(/^    #{Regexp.escape(account)}\s+=/)
+    errors << "foundation workload identities must contain #{account.inspect}"
+  end
+end
+{
+  "force_destroy               = false" => "non-destructive bucket",
+  'public_access_prevention    = "enforced"' => "public-access prevention",
+  "uniform_bucket_level_access = true" => "uniform bucket access",
+  "retention_period = 34560000" => "400-day retention floor",
+  "retention_duration_seconds = 604800" => "soft deletion",
+  "delete_contents_on_destroy = false" => "non-destructive datasets",
+  'role    = "roles/bigquery.jobUser"' => "bounded query execution",
+  'resource "google_storage_bucket_iam_member" "ingestion_object_viewer"' => "landing checksum read access",
+  'resource "google_billing_budget" "dev_demo"' => "cost budget",
+  '"billingbudgets.googleapis.com"' => "Cloud Billing Budget API",
+  'resource "google_iam_workload_identity_pool" "github"' => "Workload Identity Federation",
+  "assertion.ref == 'refs/heads/main'" => "branch-restricted federation",
+  "assertion.repository_id == '${var.github_repository_id}'" => "immutable repository-ID federation",
+  "assertion.repository_owner_id == '${var.github_repository_owner_id}'" => "immutable owner-ID federation",
+  "assertion.job_workflow_ref == '${var.github_workflow_ref}'" => "workflow-restricted federation",
+  "assertion.environment == '${var.github_environment}'" => "environment-restricted federation",
+  "attribute.repository_id/${var.github_repository_id}" => "immutable repository-ID principal"
+}.each do |text, label|
+  errors << "Terraform foundation must declare #{label}" unless terraform_foundation.include?(text)
+end
+
+require_text(
+  terraform_foundation,
+  'for_each = toset(["ingestion", "transformation", "orchestration", "bi", "auditor"])',
+  "Terraform BigQuery job execution policy",
+  errors
+)
+unless terraform_foundation.match?(/orchestration_audit = \{\s*dataset = "audit"\s*role\s+= "roles\/bigquery\.dataEditor"\s*account = "orchestration"\s*\}/m)
+  errors << "Terraform foundation must grant orchestration exact audit write access"
+end
+if terraform_foundation.match?(/orchestration_object_viewer|workload\["orchestration"\].*roles\/storage\.objectViewer/m)
+  errors << "Terraform foundation must not grant orchestration landing-object read access"
+end
+if terraform_foundation.match?(/resource "google_billing_budget" "dev_demo" \{\s*count\s*=/m)
+  errors << "Terraform dev/demo budget must be mandatory"
+end
+caller_labels_position = terraform_foundation.index("var.labels")
+invariant_labels_position = terraform_foundation.index('application    = "claimsflow"')
+unless caller_labels_position && invariant_labels_position && caller_labels_position < invariant_labels_position
+  errors << "Terraform invariant labels must override caller labels"
+end
+require_text(terraform_variables, "labels cannot override ClaimsFlow reserved governance keys", "Terraform label validation", errors)
+require_text(terraform_variables, "github_workflow_ref must belong to github_repository", "Terraform workflow/repository validation", errors)
+unless terraform_variables.match?(/monthly_budget_usd <= 100\s*&&/)
+  errors << "Terraform variables must declare bounded budget validation"
+end
+%w[
+  billing_account_id
+  github_repository
+  github_repository_id
+  github_repository_owner_id
+  github_workflow_ref
+  github_environment
+].each do |variable|
+  require_text(terraform_variables, %(variable "#{variable}"), "Terraform required deployment inputs", errors)
+end
+{
+  '^[A-Z0-9]{6}-[A-Z0-9]{6}-[A-Z0-9]{6}$' => "billing-account format validation",
+  '^[0-9]+$' => "immutable numeric GitHub ID validation",
+  "github/workflows/" => "GitHub workflow-ref validation",
+  "refs/heads/main" => "workflow main-ref validation"
+}.each do |text, label|
+  errors << "Terraform variables must declare #{label}" unless terraform_variables.include?(text)
+end
+
+dev_versions = read_file("infra/terraform/environments/dev-demo/versions.tf", errors)
+require_text(dev_versions, 'backend "gcs" {}', "dev/demo Terraform root", errors)
+local_root = read_file("infra/terraform/environments/local/main.tf", errors)
+require_text(local_root, 'resource "terraform_data" "claimsflow_local_boundary"', "local Terraform root", errors)
+require_text(local_root, "prevent_destroy = true", "local Terraform root", errors)
+
+schema = nil
+example = nil
+begin
+  schema = JSON.parse(read_file("config/release-manifest.schema.json", errors))
+rescue JSON::ParserError => e
+  errors << "Release manifest schema must be valid JSON: #{e.message}"
+end
+begin
+  example = JSON.parse(read_file("config/release-manifest.example.json", errors))
+rescue JSON::ParserError => e
+  errors << "Release manifest example must be valid JSON: #{e.message}"
+end
+if schema && example
+  required = schema.fetch("required", [])
+  missing = required - example.keys
+  errors << "Release manifest example is missing schema fields: #{missing.join(', ')}" unless missing.empty?
+  errors << "Release manifest example must be synthetic_only=true" unless example["synthetic_only"] == true
+  versions = example.fetch("component_versions", {})
+  expected_versions = {
+    "python" => "3.12",
+    "dbt_core" => "1.12.2",
+    "dbt_bigquery" => "1.12.0",
+    "airflow" => "3.3.1",
+    "terraform" => "1.15.8",
+    "google_provider" => "7.44.0"
+  }
+  errors << "Release manifest component versions must match the scaffold" unless versions == expected_versions
+
+  contract_versions = Dir.glob(File.join(ROOT, "contracts/source-data/*.yml")).map do |path|
+    File.read(path)[/^contract_version:\s*(\S+)/, 1]
+  end.compact.uniq
+  dictionary_versions = Dir.glob(File.join(ROOT, "contracts/metrics/*.yml")).map do |path|
+    File.read(path)[/^dictionary_version:\s*(\S+)/, 1]
+  end.compact.uniq
+  unless contract_versions == [example["contract_version"]]
+    errors << "Release manifest contract_version must match every governed source contract"
+  end
+  unless dictionary_versions == [example["dictionary_version"]]
+    errors << "Release manifest dictionary_version must match every governed metric contract"
+  end
+
+  dependency_locks = example["dependency_locks"]
+  unless dependency_locks.is_a?(Array) && dependency_locks.all? { |path| path.is_a?(String) && File.file?(File.join(ROOT, path)) }
+    errors << "Release manifest dependency_locks must reference existing repository files"
+  end
+end
+
+release_test = read_file("tests/unit/test_release_manifest.py", errors)
+require_text(release_test, "Draft202012Validator.check_schema", "release-manifest tests", errors)
+require_text(release_test, "FormatChecker", "release-manifest tests", errors)
+require_text(release_test, "additional-property", "release-manifest tests", errors)
+
+workflow = read_file(".github/workflows/project-foundation.yml", errors)
+CI_PATHS.each { |path| require_text(workflow, %(      - "#{path}"), "foundation workflow paths", errors) }
+{
+  'version: "0.12.4"' => "uv version",
+  "uv sync --locked --all-groups" => "locked dependency installation",
+  "ruff check ." => "Python lint",
+  "ruff format --check ." => "Python format check",
+  "mypy" => "Python type check",
+  "pytest" => "Python unit tests",
+  "dbt parse" => "dbt parse",
+  "docker compose config --quiet" => "Compose validation",
+  "docker compose build airflow" => "Airflow image build",
+  "python /opt/claimsflow/airflow_policy/validate_dag.py" => "effective Airflow DAG policy",
+  'terraform_version: "1.15.8"' => "Terraform version",
+  "terraform fmt -check" => "Terraform format check",
+  "terraform -chdir=infra/terraform/environments/local validate" => "local Terraform validation",
+  "terraform -chdir=infra/terraform/environments/dev-demo validate" => "dev/demo Terraform validation",
+  "GITHUB_TOKEN" => "secret-scan token"
+}.each do |text, label|
+  errors << "Foundation workflow must run #{label}" unless workflow.include?(text)
+end
+ACTION_PINS.each do |action, sha|
+  require_text(workflow, "#{action}@#{sha}", "foundation workflow immutable action pins", errors)
+end
+workflow.scan(/uses:\s+([^\s#]+)/).flatten.each do |reference|
+  next if reference.match?(/@[0-9a-f]{40}\z/)
+
+  errors << "Foundation workflow action references must use immutable commit SHAs: #{reference}"
+end
+
+development_docs = read_file("docs/development/README.md", errors)
+%w[bootstrap check airflow-up terraform-validate].each do |command|
+  require_text(development_docs, "make #{command}", "development guide", errors)
+end
+require_text(development_docs, "terraform apply", "development guide", errors)
+
+inventory = read_file("docs/development/component-inventory.md", errors)
+["Python", "dbt", "Airflow", "Terraform", "GitHub Actions"].each do |component|
+  require_text(inventory, component, "component inventory", errors)
+end
+require_text(inventory, "Deferred", "component inventory", errors)
+
+readme = read_file("README.md", errors)
+require_text(readme, "Phase 1", "README", errors)
+require_text(readme, "docs/development/README.md", "README", errors)
+
+new_roots = %w[
+  .github/workflows/project-foundation.yml
+  .dockerignore
+  .env.example
+  .gitignore
+  .python-version
+  Makefile
+  README.md
+  analytics/dbt
+  compose.yaml
+  config
+  docs/development
+  infra/terraform
+  orchestration/airflow
+  pyproject.toml
+  scripts/validate_project_scaffolding.rb
+  scripts/test_project_scaffolding_validator.rb
+  src
+  tests
+]
+governed_files = new_roots.flat_map do |entry|
+  path = File.join(ROOT, entry)
+  File.directory?(path) ? Dir.glob(File.join(path, "**", "*")) : [path]
+end.select do |path|
+  components = relative(path).split(File::SEPARATOR)
+  File.file?(path) && (components & GENERATED_PATH_COMPONENTS).empty?
+end.uniq
+
+governed_files.each do |path|
+  content = File.read(path)
+  errors << "#{relative(path)} must end with a newline" unless content.end_with?("\n")
+  content.lines.each_with_index do |line, index|
+    errors << "#{relative(path)}:#{index + 1} has trailing whitespace" if line.match?(/[ \t]+(?:\n|\z)/)
+  end
+  if content.match?(/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/)
+    errors << "#{relative(path)} contains private key material"
+  end
+  if content.match?(/"private_key"\s*:\s*"(?!replace|example|unset)[^\"]{20,}"/i)
+    errors << "#{relative(path)} contains a private key-like JSON value"
+  end
+end
+
+if errors.empty?
+  puts "Project scaffold validation passed (#{REQUIRED_FILES.length} required files, #{governed_files.length} governed files)."
+  exit 0
+end
+
+warn "Project scaffold validation failed with #{errors.uniq.length} error(s):"
+errors.uniq.each { |error| warn "- #{error}" }
+exit 1

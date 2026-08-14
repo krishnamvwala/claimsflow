@@ -1,0 +1,127 @@
+name: Project foundation validation
+
+on:
+  pull_request:
+    paths:
+      - ".dockerignore"
+      - ".env.example"
+      - ".gitignore"
+      - ".python-version"
+      - "Makefile"
+      - "README.md"
+      - "analytics/dbt/**"
+      - "compose.yaml"
+      - "config/**"
+      - "docs/development/**"
+      - "infra/terraform/**"
+      - "orchestration/airflow/**"
+      - "pyproject.toml"
+      - "scripts/validate_project_scaffolding.rb"
+      - "scripts/test_project_scaffolding_validator.rb"
+      - "src/**"
+      - "tests/**"
+      - "uv.lock"
+      - ".github/workflows/project-foundation.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - ".dockerignore"
+      - ".env.example"
+      - ".gitignore"
+      - ".python-version"
+      - "Makefile"
+      - "README.md"
+      - "analytics/dbt/**"
+      - "compose.yaml"
+      - "config/**"
+      - "docs/development/**"
+      - "infra/terraform/**"
+      - "orchestration/airflow/**"
+      - "pyproject.toml"
+      - "scripts/validate_project_scaffolding.rb"
+      - "scripts/test_project_scaffolding_validator.rb"
+      - "src/**"
+      - "tests/**"
+      - "uv.lock"
+      - ".github/workflows/project-foundation.yml"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "3.3"
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with:
+          version: "0.12.4"
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install locked dependencies
+        run: uv sync --locked --all-groups
+      - name: Validate project scaffold
+        run: ruby scripts/validate_project_scaffolding.rb
+      - name: Test scaffold validator failure cases
+        run: ruby scripts/test_project_scaffolding_validator.rb
+      - name: Lint Python
+        run: uv run --locked ruff check .
+      - name: Check Python formatting
+        run: uv run --locked ruff format --check .
+      - name: Type-check Python
+        run: uv run --locked mypy
+      - name: Run Python unit tests
+        run: uv run --locked pytest
+      - name: Parse dbt project
+        run: uv run --locked --group dbt dbt parse --project-dir analytics/dbt --profiles-dir config/dbt --target ci --no-partial-parse
+
+  airflow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+      - name: Build pinned Airflow image
+        run: docker compose build airflow
+      - name: Validate effective DAG policy in its runtime image
+        run: docker compose run --rm --no-deps airflow python /opt/claimsflow/airflow_policy/validate_dag.py
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.15.8"
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive infra/terraform
+      - name: Initialize and validate local root
+        run: |
+          terraform -chdir=infra/terraform/environments/local init -backend=false
+          terraform -chdir=infra/terraform/environments/local validate
+      - name: Initialize and validate dev/demo root
+        run: |
+          terraform -chdir=infra/terraform/environments/dev-demo init -backend=false
+          terraform -chdir=infra/terraform/environments/dev-demo validate
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0

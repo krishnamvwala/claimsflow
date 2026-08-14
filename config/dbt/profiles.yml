@@ -1,0 +1,21 @@
+claimsflow:
+  target: ci
+  outputs:
+    ci:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('CLAIMSFLOW_GCP_PROJECT', 'claimsflow-synthetic-ci') }}"
+      dataset: "{{ env_var('CLAIMSFLOW_DBT_DATASET', 'claimsflow_ci') }}"
+      location: "{{ env_var('CLAIMSFLOW_BIGQUERY_LOCATION', 'US') }}"
+      threads: 1
+      priority: interactive
+      maximum_bytes_billed: 1073741824
+    dev_demo:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('CLAIMSFLOW_GCP_PROJECT', 'unset-required-dev-demo-project') }}"
+      dataset: "{{ env_var('CLAIMSFLOW_DBT_DATASET', 'claimsflow_curated') }}"
+      location: "{{ env_var('CLAIMSFLOW_BIGQUERY_LOCATION', 'US') }}"
+      threads: 4
+      priority: interactive
+      maximum_bytes_billed: 1073741824

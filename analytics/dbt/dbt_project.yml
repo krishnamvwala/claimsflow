@@ -1,0 +1,37 @@
+name: claimsflow
+version: 0.1.0
+config-version: 2
+
+profile: claimsflow
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: target
+clean-targets:
+  - target
+  - dbt_packages
+
+models:
+  claimsflow:
+    +persist_docs:
+      relation: true
+      columns: true
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: ephemeral
+      +schema: intermediate
+    curated:
+      +schema: curated
+    semantic:
+      +materialized: view
+      +schema: semantic
+    operational:
+      +materialized: view
+      +schema: operational
