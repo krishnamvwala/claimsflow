@@ -8,6 +8,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+data/generated/
 
 # dbt outputs
 analytics/dbt/target/

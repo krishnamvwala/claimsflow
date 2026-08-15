@@ -1,7 +1,8 @@
 # Local development
 
-ClaimsFlow Phase 1 is a reproducible, synthetic-only project foundation. The default
-validation path does not contact Google Cloud, create infrastructure, or process claim rows.
+ClaimsFlow has a reproducible, synthetic-only project foundation and the first Phase 2
+generator slice. The default validation path does not contact Google Cloud or create
+infrastructure. Generated claim rows stay in a user-selected local directory.
 
 ## Prerequisites
 
@@ -43,6 +44,8 @@ fixtures, logs, screenshots, Terraform variables, or issue/PR text.
 - `make check` runs every offline repository gate.
 - `make check-python` runs Ruff lint/format checks, strict mypy, and pytest.
 - `make dbt-parse` parses the empty Phase 1 dbt project with a non-secret CI profile.
+- `uv run --locked claimsflow generate --service-month 2026-07 --claims 1000 --seed 20260815 --output data/generated/demo-2026-07`
+  creates a bounded, repeatable fictional delivery without overwriting existing paths.
 - `make airflow-up` builds and starts digest-pinned Airflow 3.3.1 at
   `http://127.0.0.1:8080`; the standalone process prints temporary local credentials.
 - `make airflow-down` stops the local Airflow service.
@@ -81,6 +84,7 @@ The following are intentionally untracked:
 - dbt `target`, logs, and downloaded packages
 - Airflow logs, SQLite metadata, configuration, and generated passwords
 - Terraform state, plans, override files, and `.terraform` plugin directories
+- synthetic delivery outputs under `data/generated/`
 
 Never delete landing or raw evidence to recover a pipeline. This Phase 1 repository has no
 data cleanup command.
