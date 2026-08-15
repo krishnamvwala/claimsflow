@@ -19,7 +19,7 @@ parseable but does not yet perform the future business operation.
 | Release evidence | `config/release-manifest*` | JSON Schema 2020-12; jsonschema 4.26.0 | Scaffolded | Version, artifact, approval, limitation, and synthetic-only evidence | Complete schema and governed-version tests |
 | GitHub Actions | `.github/workflows/project-foundation.yml` | Actions pinned to commit SHAs | Scaffolded | PR/main validation only; no deploy or cloud authentication | Path policy and GitHub checks |
 | Power BI | Future `bi/` path | Not selected | Deferred | Semantic/operational consumption only | Future model/report tests |
-| Synthetic source generator | Future `src/claimsflow/generator` | Python 3.12 | Deferred to Phase 2 | Reserved fictional data and immutable generator manifests | Future determinism/provenance tests |
+| Synthetic source generator | `src/claimsflow/generator` | Python 3.12 | Phase 2 slice implemented | Reserved fictional data and immutable generator manifests | Determinism, contract-header, provenance, reconciliation, and safety tests |
 | Ingestion and validation | Future Python adapters and commands | Python 3.12 | Deferred to Phase 2 | Verify provenance, register/load batches, classify every source row | Future idempotency/reconciliation tests |
 
 ## Version authority
@@ -33,9 +33,8 @@ Terraform's built-in provider and therefore has no external-provider lock entry.
 
 ## Next milestone
 
-Phase 2 implements a deterministic, bounded synthetic source generator and the first
-provenance/ingestion vertical slice. It will create reserved fictional claim deliveries,
-manifests and hashes; reject unapproved inputs before upload; make batch registration
-idempotent; preserve source lineage; and prove accepted, warned, quarantined, and rejected
-counts reconcile to raw input. It will not yet add governed metrics, dashboards, or an
-automated production deployment.
+Phase 2 now has its deterministic, bounded synthetic source generator. The next slice will
+verify generator manifests and hashes before local landing, make batch registration
+idempotent, preserve source lineage, and classify every source row. It will prove accepted,
+warned, quarantined, and rejected counts reconcile to raw input. Phase 2 will not yet add
+governed metrics, dashboards, or an automated production deployment.

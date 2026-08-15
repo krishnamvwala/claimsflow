@@ -11,6 +11,7 @@
 **/__pycache__
 **/.terraform
 **/logs
+data/generated
 **/*.tfplan
 **/*.tfstate
 **/*.tfstate.*

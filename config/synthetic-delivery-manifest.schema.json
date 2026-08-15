@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claimsflow.example/schemas/synthetic-delivery-manifest.schema.json",
+  "title": "ClaimsFlow synthetic source delivery manifest",
+  "description": "Immutable provenance and reconciliation evidence for one fictional delivery.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "batch_id",
+    "synthetic_only",
+    "generated_at_utc",
+    "generator",
+    "source_families",
+    "files",
+    "row_count_reconciliation",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "batch_id": { "type": "string", "pattern": "^CF-[0-9]{6}-[0-9A-F]{12}$" },
+    "synthetic_only": { "const": true },
+    "generated_at_utc": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "seed", "claim_count", "service_month", "config_sha256"],
+      "properties": {
+        "name": { "const": "claimsflow-synthetic-source-generator" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "seed": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "claim_count": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "service_month": { "type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$" },
+        "config_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "source_families": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "appeals",
+          "claim-lines",
+          "claims",
+          "denials",
+          "eligibility",
+          "payments",
+          "reference-data",
+          "remittances"
+        ]
+      },
+      "minItems": 8,
+      "maxItems": 8,
+      "uniqueItems": true
+    },
+    "files": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "file_name",
+          "source_family",
+          "source_system",
+          "contract_id",
+          "contract_version",
+          "row_count",
+          "sha256"
+        ],
+        "properties": {
+          "path": { "type": "string", "pattern": "^files/[A-Za-z0-9_.-]+\\.csv$" },
+          "file_name": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+\\.csv$" },
+          "source_family": {
+            "enum": [
+              "appeals",
+              "claim-lines",
+              "claims",
+              "denials",
+              "eligibility",
+              "payments",
+              "reference-data",
+              "remittances"
+            ]
+          },
+          "source_system": { "type": "string", "pattern": "^synthetic_[a-z_]+$" },
+          "contract_id": { "type": "string", "pattern": "^SRC-[A-Z]{3}-[0-9]{3}$" },
+          "contract_version": { "const": "1.0.0" },
+          "dataset": {
+            "enum": [
+              "payers",
+              "plans",
+              "providers",
+              "facilities",
+              "diagnoses",
+              "procedures",
+              "denial-reasons"
+            ]
+          },
+          "row_count": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "source_family": { "const": "reference-data" } } },
+            "then": { "required": ["dataset"] },
+            "else": { "not": { "required": ["dataset"] } }
+          }
+        ]
+      }
+    },
+    "row_count_reconciliation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generated_rows",
+        "written_rows",
+        "reconciled"
+      ],
+      "properties": {
+        "generated_rows": { "type": "integer", "minimum": 1 },
+        "written_rows": { "type": "integer", "minimum": 1 },
+        "reconciled": { "const": true }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    }
+  }
+}
