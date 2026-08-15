@@ -1,0 +1,40 @@
+.DS_Store
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# dbt outputs
+analytics/dbt/target/
+analytics/dbt/logs/
+analytics/dbt/dbt_packages/
+config/dbt/.user.yml
+
+# Airflow local state
+orchestration/airflow/logs/
+orchestration/airflow/db/
+orchestration/airflow/airflow.cfg
+orchestration/airflow/airflow.db
+orchestration/airflow/simple_auth_manager_passwords.json.generated
+
+# Terraform local state and generated plans
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

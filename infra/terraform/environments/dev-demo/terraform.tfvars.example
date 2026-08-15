@@ -1,0 +1,11 @@
+project_id          = "replace-with-dedicated-synthetic-project"
+region              = "us-central1"
+bigquery_location   = "US"
+landing_bucket_name = "replace-with-globally-unique-claimsflow-synthetic-landing"
+## Replace this syntactically valid sentinel with the approved billing account ID.
+billing_account_id         = "000000-000000-000000"
+github_repository          = "krishnamvwala/claimsflow"
+github_repository_id       = "1333496712"
+github_repository_owner_id = "103712190"
+github_workflow_ref        = "krishnamvwala/claimsflow/.github/workflows/deploy-dev-demo.yml@refs/heads/main"
+github_environment         = "dev-demo"

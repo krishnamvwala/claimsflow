@@ -1,0 +1,34 @@
+name: claimsflow
+
+services:
+  airflow:
+    build:
+      context: .
+      dockerfile: orchestration/airflow/Dockerfile
+      args:
+        AIRFLOW_IMAGE: apache/airflow:3.3.1-python3.12@sha256:b01a795dfbd113bbbfdf3ee169b8f27e9a0090ccef105f1a452b3594a11ed316
+    environment:
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "4"
+      AIRFLOW__CORE__PARALLELISM: "4"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/db/airflow.db
+      AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+      CLAIMSFLOW_ENVIRONMENT: local
+      CLAIMSFLOW_SYNTHETIC_ONLY: "true"
+      CLAIMSFLOW_MAXIMUM_BYTES_BILLED: "1073741824"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./orchestration/airflow/dags:/opt/airflow/dags:ro
+      - ./orchestration/airflow/logs:/opt/airflow/logs
+      - ./orchestration/airflow/db:/opt/airflow/db
+    command: standalone
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: "no"

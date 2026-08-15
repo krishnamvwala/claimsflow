@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claimsflow.example/schemas/release-manifest.schema.json",
+  "title": "ClaimsFlow release manifest",
+  "description": "Synthetic-only release evidence. This schema never authorizes real healthcare data.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "pythonVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$"
+    },
+    "semanticVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+    }
+  },
+  "required": [
+    "schema_version",
+    "release_version",
+    "git_commit",
+    "environment",
+    "synthetic_only",
+    "dependency_locks",
+    "component_versions",
+    "contract_version",
+    "dictionary_version",
+    "dbt_artifacts",
+    "generator_version",
+    "included_batch_ids",
+    "known_limitations",
+    "approved_by",
+    "approved_at_utc"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "release_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "git_commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "environment": { "enum": ["local", "dev-demo"] },
+    "synthetic_only": { "const": true },
+    "dependency_locks": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "component_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python", "dbt_core", "dbt_bigquery", "airflow", "terraform", "google_provider"],
+      "properties": {
+        "python": { "$ref": "#/$defs/pythonVersion" },
+        "dbt_core": { "$ref": "#/$defs/semanticVersion" },
+        "dbt_bigquery": { "$ref": "#/$defs/semanticVersion" },
+        "airflow": { "$ref": "#/$defs/semanticVersion" },
+        "terraform": { "$ref": "#/$defs/semanticVersion" },
+        "google_provider": { "$ref": "#/$defs/semanticVersion" }
+      }
+    },
+    "contract_version": { "$ref": "#/$defs/semanticVersion" },
+    "dictionary_version": { "$ref": "#/$defs/semanticVersion" },
+    "dbt_artifacts": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "generator_version": { "type": "string", "minLength": 1 },
+    "included_batch_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "known_limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1
+    },
+    "approved_by": { "type": "string", "minLength": 1 },
+    "approved_at_utc": { "type": "string", "format": "date-time", "pattern": "Z$" }
+  }
+}
