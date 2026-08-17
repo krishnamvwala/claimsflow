@@ -19,11 +19,11 @@
   "contract_version": "1.0.0",
   "dictionary_version": "1.0.0",
   "dbt_artifacts": [],
-  "generator_version": "not-implemented",
+  "generator_version": "1.0.1",
   "included_batch_ids": [],
   "known_limitations": [
     "SYNTHETIC DATA ONLY — NOT FOR PRODUCTION OR CLINICAL/BILLING USE",
-    "Phase 1 provides project scaffolding; ingestion and analytical models are not implemented."
+    "Local ingestion is implemented; cloud loading, trusted publication, and analytical models are not implemented."
   ],
   "approved_by": "local-development-only",
   "approved_at_utc": "2026-08-14T00:00:00Z"

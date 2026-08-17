@@ -1,8 +1,9 @@
 # Local development
 
-ClaimsFlow has a reproducible, synthetic-only project foundation and the first Phase 2
-generator slice. The default validation path does not contact Google Cloud or create
-infrastructure. Generated claim rows stay in a user-selected local directory.
+ClaimsFlow has a reproducible, synthetic-only project foundation, deterministic Phase 2
+generator, and idempotent local ingestion boundary. The default validation path does not
+contact Google Cloud or create infrastructure. Generated and ingested claim rows stay in
+explicit user-selected local directories.
 
 ## Prerequisites
 
@@ -46,6 +47,9 @@ fixtures, logs, screenshots, Terraform variables, or issue/PR text.
 - `make dbt-parse` parses the empty Phase 1 dbt project with a non-secret CI profile.
 - `uv run --locked claimsflow generate --service-month 2026-07 --claims 1000 --seed 20260815 --output data/generated/demo-2026-07`
   creates a bounded, repeatable fictional delivery without overwriting existing paths.
+- `uv run --locked claimsflow ingest --manifest data/generated/demo-2026-07/manifest.json --workspace data/local-ingestion`
+  independently verifies, classifies, reconciles, lands, and registers the delivery. An
+  identical replay is an audited `duplicate_no_op` and never republishes rows.
 - `make airflow-up` builds and starts digest-pinned Airflow 3.3.1 at
   `http://127.0.0.1:8080`; the standalone process prints temporary local credentials.
 - `make airflow-down` stops the local Airflow service.
@@ -85,9 +89,10 @@ The following are intentionally untracked:
 - Airflow logs, SQLite metadata, configuration, and generated passwords
 - Terraform state, plans, override files, and `.terraform` plugin directories
 - synthetic delivery outputs under `data/generated/`
+- local ingestion registries and batch evidence under `data/local-ingestion/`
 
-Never delete landing or raw evidence to recover a pipeline. This Phase 1 repository has no
-data cleanup command.
+Never delete landing, registry, or raw evidence to recover a pipeline. ClaimsFlow has no data
+cleanup command; use a new isolated workspace for disposable local demonstrations.
 
 ## Troubleshooting
 

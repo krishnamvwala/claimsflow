@@ -4,11 +4,11 @@ Healthcare claims analytics, denial prevention, and revenue recovery platform bu
 
 ## Project status
 
-ClaimsFlow has completed the Phase 0 discovery/success-contract baseline and the Phase 1 implementation foundation. Phase 2 is in progress with the deterministic synthetic source generator. Requirements, acceptance criteria, machine-readable source-data contracts, the governed metric dictionary, and seven accepted architecture decisions are documented and automatically validated.
+ClaimsFlow has completed the Phase 0 discovery/success-contract baseline and the Phase 1 implementation foundation. Phase 2 now includes the deterministic synthetic source generator and an idempotent local ingestion boundary. Requirements, acceptance criteria, machine-readable source-data contracts, the governed metric dictionary, and seven accepted architecture decisions are documented and automatically validated.
 
 Phase 1 adds pinned Python tooling, the typed package and CLI boundary, an empty parseable dbt project, an inert fail-closed Airflow DAG in Docker, guarded Terraform local and dev/demo roots, release-manifest configuration, component-aware CI, and offline policy tests. It creates no cloud resources and implements no claims business logic.
 
-The first Phase 2 slice creates bounded fictional source deliveries for all eight governed source families, with delivery-namespaced identifiers, contract metadata, row counts, SHA-256 hashes, and generated-to-written row-count reconciliation. The next slice will verify, classify, and register those manifests through an idempotent local ingestion boundary. No real healthcare or customer data is permitted at any phase.
+The Phase 2 generator creates bounded fictional source deliveries for all eight governed source families, with delivery-namespaced identifiers, contract metadata, row counts, SHA-256 hashes, and generated-to-written row-count reconciliation. The local ingestion slice independently reproduces approved generator evidence before landing, streams immutable raw evidence, records row lineage, classifies structural outcomes, verifies stored artifacts on replay, handles duplicate deliveries as audited no-ops, preserves immutable-version collision evidence, recovers interrupted publication through durable intents, and proves disposition reconciliation. No real healthcare or customer data is permitted at any phase.
 
 ## Quick start
 
@@ -29,6 +29,14 @@ uv run --locked claimsflow generate \
   --output data/generated/demo-2026-07
 ```
 
+Verify and register that delivery in an ignored local workspace:
+
+```bash
+uv run --locked claimsflow ingest \
+  --manifest data/generated/demo-2026-07/manifest.json \
+  --workspace data/local-ingestion
+```
+
 See the [local development guide](docs/development/README.md) for prerequisites, component
 commands, boundaries, and troubleshooting.
 
@@ -42,3 +50,4 @@ commands, boundaries, and troubleshooting.
 - [Local development guide](docs/development/README.md)
 - [Runtime component inventory](docs/development/component-inventory.md)
 - [Synthetic generator guide](docs/development/synthetic-generator.md)
+- [Local ingestion guide](docs/development/local-ingestion.md)

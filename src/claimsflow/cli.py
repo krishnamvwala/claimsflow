@@ -12,6 +12,7 @@ from typing import TextIO
 
 from claimsflow.config import ConfigurationError, RuntimeSettings
 from claimsflow.generator import GenerationConfig, GenerationError, generate_delivery
+from claimsflow.ingestion import IngestionError, ingest_delivery
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,6 +50,28 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="repeatability seed from 0 through 2147483647 (default: 20260815)",
     )
+    ingest = subparsers.add_parser(
+        "ingest",
+        help="verify and locally register one synthetic delivery without cloud writes",
+    )
+    ingest.add_argument(
+        "--manifest",
+        required=True,
+        type=Path,
+        help="generator manifest.json to verify before any local landing write",
+    )
+    ingest.add_argument(
+        "--workspace",
+        required=True,
+        type=Path,
+        help="local control-plane and batch-artifact directory",
+    )
+    ingest.add_argument(
+        "--contracts",
+        default=Path("contracts/source-data"),
+        type=Path,
+        help="governed source-contract directory (default: contracts/source-data)",
+    )
     return parser
 
 
@@ -84,7 +107,7 @@ def main(
                 claim_count=arguments.claims,
                 service_month=arguments.service_month,
             )
-            result = generate_delivery(config, arguments.output)
+            generation_result = generate_delivery(config, arguments.output)
         except (ConfigurationError, GenerationError, OSError) as error:
             print(json.dumps({"status": "error", "reason": str(error)}), file=error_output)
             return 2
@@ -93,11 +116,50 @@ def main(
                 {
                     "status": "ok",
                     "synthetic_only": True,
-                    "batch_id": result.batch_id,
-                    "output_directory": str(result.output_directory),
-                    "manifest": str(result.manifest_path),
-                    "file_count": result.file_count,
-                    "total_rows": result.total_rows,
+                    "batch_id": generation_result.batch_id,
+                    "output_directory": str(generation_result.output_directory),
+                    "manifest": str(generation_result.manifest_path),
+                    "file_count": generation_result.file_count,
+                    "total_rows": generation_result.total_rows,
+                },
+                sort_keys=True,
+            ),
+            file=output,
+        )
+        return 0
+
+    if arguments.command == "ingest":
+        try:
+            RuntimeSettings.from_mapping(os.environ if environ is None else environ)
+            ingestion_result = ingest_delivery(
+                arguments.manifest,
+                arguments.workspace,
+                arguments.contracts,
+            )
+        except (ConfigurationError, IngestionError, OSError) as error:
+            print(json.dumps({"status": "error", "reason": str(error)}), file=error_output)
+            return 2
+        print(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "synthetic_only": True,
+                    "decision": ingestion_result.decision,
+                    "batch_id": ingestion_result.batch_id,
+                    "workspace": str(ingestion_result.workspace),
+                    "artifact_directory": str(ingestion_result.artifact_directory),
+                    "report": str(ingestion_result.report_path),
+                    "file_count": ingestion_result.file_count,
+                    "processed_files": ingestion_result.processed_files,
+                    "duplicate_files": ingestion_result.duplicate_files,
+                    "declared_rows": ingestion_result.declared_rows,
+                    "raw_rows": ingestion_result.raw_rows,
+                    "duplicate_no_op_rows": ingestion_result.duplicate_no_op_rows,
+                    "accepted": ingestion_result.accepted,
+                    "warned": ingestion_result.warned,
+                    "quarantined": ingestion_result.quarantined,
+                    "rejected": ingestion_result.rejected,
+                    "reconciled": ingestion_result.reconciled,
                 },
                 sort_keys=True,
             ),

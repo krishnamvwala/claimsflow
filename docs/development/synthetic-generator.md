@@ -24,6 +24,9 @@ The command supports 1 through 100,000 claims. The same service month, count, se
 generator version produce byte-identical CSV files and an identical manifest regardless of
 when the command runs.
 
+Generator version `1.0.1` is the current default. It preserves exact claim-header rollups
+while allocating cents so every claim line independently satisfies its financial equation.
+
 ## Delivery contents
 
 Each delivery contains:
@@ -38,10 +41,11 @@ Every fictional identifier uses a reserved `SYN-` prefix. Human names, addresses
 dates, medical narratives, credentials, and customer data are never generated. Descriptions
 are explicitly labeled synthetic or non-clinical.
 
-## Current boundary and next slice
+## Current boundary
 
 This generator creates structurally contract-aligned records with deterministic relationship
-and financial controls. It does not yet apply contract freshness rules, inject the invalid
-scenario fixtures, upload files, register a batch, or classify data-quality outcomes. The
-next Phase 2 slice will independently recompute hashes, reject unapproved manifests, register
-batches idempotently, preserve row lineage, and reconcile ingestion dispositions.
+and financial controls. It does not apply contract freshness rules, inject every invalid
+scenario fixture, upload files, or publish trusted data. Use the
+[local ingestion boundary](local-ingestion.md) to independently recompute hashes, reject
+unapproved evidence, register batches idempotently, preserve row lineage, classify structural
+outcomes, and reconcile ingestion dispositions.

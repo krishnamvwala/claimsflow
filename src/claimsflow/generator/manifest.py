@@ -30,6 +30,16 @@ def _integer(value: object, field: str) -> int:
     return value
 
 
+def _require_exact_keys(value: dict[str, Any], expected: set[str], field: str) -> None:
+    actual = set(value)
+    if actual != expected:
+        missing = sorted(expected - actual)
+        extra = sorted(actual - expected)
+        raise ManifestValidationError(
+            f"{field} keys do not match; missing={missing}, extra={extra}"
+        )
+
+
 def validate_manifest(
     manifest: dict[str, Any],
     delivery_directory: Path | None = None,
@@ -52,6 +62,31 @@ def validate_manifest(
     generator: dict[str, Any] = generator_value
     files: list[dict[str, Any]] = files_value
     reconciliation: dict[str, Any] = reconciliation_value
+    _require_exact_keys(
+        manifest,
+        {
+            "schema_version",
+            "batch_id",
+            "synthetic_only",
+            "generated_at_utc",
+            "generator",
+            "source_families",
+            "files",
+            "row_count_reconciliation",
+            "limitations",
+        },
+        "manifest",
+    )
+    _require_exact_keys(
+        generator,
+        {"name", "version", "seed", "claim_count", "service_month", "config_sha256"},
+        "generator",
+    )
+    _require_exact_keys(
+        reconciliation,
+        {"generated_rows", "written_rows", "reconciled"},
+        "row_count_reconciliation",
+    )
     try:
         config = GenerationConfig.from_values(
             seed=_integer(generator["seed"], "generator.seed"),
@@ -84,6 +119,19 @@ def validate_manifest(
         definition = expected_definitions.get(key)
         if definition is None:
             raise ManifestValidationError(f"files[{index}] has an unapproved inventory key: {key}")
+        expected_entry_keys = {
+            "path",
+            "file_name",
+            "source_family",
+            "source_system",
+            "contract_id",
+            "contract_version",
+            "row_count",
+            "sha256",
+        }
+        if definition.dataset is not None:
+            expected_entry_keys.add("dataset")
+        _require_exact_keys(entry, expected_entry_keys, f"files[{index}]")
         file_name = entry.get("file_name")
         path = entry.get("path")
         if not isinstance(file_name, str) or not isinstance(path, str):
@@ -104,7 +152,10 @@ def validate_manifest(
         ):
             if entry.get(field) != expected:
                 raise ManifestValidationError(f"files[{index}].{field} does not match the catalog")
-        row_total += _integer(entry.get("row_count"), f"files[{index}].row_count")
+        row_count = _integer(entry.get("row_count"), f"files[{index}].row_count")
+        if row_count < 0:
+            raise ManifestValidationError(f"files[{index}].row_count cannot be negative")
+        row_total += row_count
 
         if delivery_directory is not None:
             file_path = delivery_directory / str(path)
@@ -138,6 +189,14 @@ def validate_manifest(
         raise ManifestValidationError("schema_version must be 1.0.0")
     if manifest.get("synthetic_only") is not True:
         raise ManifestValidationError("synthetic_only must remain true")
+    limitations = manifest.get("limitations")
+    if (
+        not isinstance(limitations, list)
+        or not limitations
+        or not all(isinstance(item, str) and item for item in limitations)
+        or len(limitations) != len(set(limitations))
+    ):
+        raise ManifestValidationError("limitations must contain unique non-empty strings")
     if manifest.get("batch_id") != config.batch_id:
         raise ManifestValidationError("batch_id does not match the canonical generator inputs")
     if generator.get("config_sha256") != config.fingerprint_sha256:

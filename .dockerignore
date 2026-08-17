@@ -12,6 +12,7 @@
 **/.terraform
 **/logs
 data/generated
+data/local-ingestion
 **/*.tfplan
 **/*.tfstate
 **/*.tfstate.*

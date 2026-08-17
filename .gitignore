@@ -9,6 +9,7 @@ __pycache__/
 .coverage
 htmlcov/
 data/generated/
+data/local-ingestion/
 
 # dbt outputs
 analytics/dbt/target/
