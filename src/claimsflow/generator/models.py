@@ -10,7 +10,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 GENERATOR_NAME = "claimsflow-synthetic-source-generator"
-GENERATOR_VERSION = "1.0.0"
+GENERATOR_VERSION = "1.0.1"
 MANIFEST_SCHEMA_VERSION = "1.0.0"
 MAX_CLAIM_COUNT = 100_000
 MAX_SEED = 2_147_483_647

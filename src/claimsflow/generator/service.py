@@ -9,7 +9,7 @@ import shutil
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from claimsflow.generator.catalog import SourceDefinition, render_file_name
 from claimsflow.generator.manifest import validate_manifest
@@ -23,27 +23,46 @@ from claimsflow.generator.models import (
 from claimsflow.generator.records import Row, source_rows
 
 
-def _write_csv(path: Path, definition: SourceDefinition, rows: Iterable[Row]) -> int:
+class _Sha256TextSink:
+    """Minimal text writer used to reproduce exact CSV hashes without disk output."""
+
+    def __init__(self) -> None:
+        self._digest = hashlib.sha256()
+
+    def write(self, value: str) -> int:
+        encoded = value.encode("utf-8")
+        self._digest.update(encoded)
+        return len(value)
+
+    @property
+    def hexdigest(self) -> str:
+        return self._digest.hexdigest()
+
+
+def _write_rows(output: TextIO, definition: SourceDefinition, rows: Iterable[Row]) -> int:
     count = 0
-    with path.open("w", encoding="utf-8", newline="") as output:
-        writer = csv.DictWriter(
-            output,
-            fieldnames=definition.columns,
-            extrasaction="raise",
-            lineterminator="\n",
-        )
-        writer.writeheader()
-        for row in rows:
-            if set(row) != set(definition.columns):
-                missing = sorted(set(definition.columns) - set(row))
-                extra = sorted(set(row) - set(definition.columns))
-                raise GenerationError(
-                    f"{definition.source_family} row/header mismatch; "
-                    f"missing={missing}, extra={extra}"
-                )
-            writer.writerow(row)
-            count += 1
+    writer = csv.DictWriter(
+        output,
+        fieldnames=definition.columns,
+        extrasaction="raise",
+        lineterminator="\n",
+    )
+    writer.writeheader()
+    for row in rows:
+        if set(row) != set(definition.columns):
+            missing = sorted(set(definition.columns) - set(row))
+            extra = sorted(set(row) - set(definition.columns))
+            raise GenerationError(
+                f"{definition.source_family} row/header mismatch; missing={missing}, extra={extra}"
+            )
+        writer.writerow(row)
+        count += 1
     return count
+
+
+def _write_csv(path: Path, definition: SourceDefinition, rows: Iterable[Row]) -> int:
+    with path.open("w", encoding="utf-8", newline="") as output:
+        return _write_rows(output, definition, rows)
 
 
 def _sha256(path: Path) -> str:
@@ -85,6 +104,32 @@ def _manifest(
             "Generation creates local delivery evidence only and performs no cloud upload.",
         ],
     }
+
+
+def expected_manifest(config: GenerationConfig) -> dict[str, Any]:
+    """Reproduce exact approved delivery evidence without creating payload files."""
+
+    file_evidence: list[dict[str, Any]] = []
+    total_rows = 0
+    for source in source_rows(config):
+        file_name = render_file_name(source.definition, config)
+        sink = _Sha256TextSink()
+        row_count = _write_rows(sink, source.definition, source.rows)  # type: ignore[arg-type]
+        total_rows += row_count
+        evidence: dict[str, Any] = {
+            "path": f"files/{file_name}",
+            "file_name": file_name,
+            "source_family": source.definition.source_family,
+            "source_system": source.definition.source_system,
+            "contract_id": source.definition.contract_id,
+            "contract_version": source.definition.contract_version,
+            "row_count": row_count,
+            "sha256": sink.hexdigest,
+        }
+        if source.definition.dataset is not None:
+            evidence["dataset"] = source.definition.dataset
+        file_evidence.append(evidence)
+    return _manifest(config, file_evidence, total_rows)
 
 
 def generate_delivery(config: GenerationConfig, output_directory: Path) -> GenerationResult:

@@ -47,13 +47,13 @@ def test_config_is_bounded_and_has_stable_identity() -> None:
     )
 
     assert config.claim_count == MAX_CLAIM_COUNT
-    assert config.batch_id == "CF-202607-FD231BC1E260"
+    assert config.batch_id == "CF-202607-07AD08718B52"
     assert config.generated_at.isoformat() == "2026-08-16T00:00:00+00:00"
 
 
 def test_generator_version_is_part_of_batch_identity() -> None:
     config = GenerationConfig.from_values(seed=42, claim_count=20, service_month="2026-07")
-    next_version = replace(config, generator_version="1.0.1")
+    next_version = replace(config, generator_version="1.0.2")
 
     assert config.batch_id != next_version.batch_id
     assert config.delivery_namespace != next_version.delivery_namespace
@@ -61,8 +61,8 @@ def test_generator_version_is_part_of_batch_identity() -> None:
 
 
 def test_delivery_namespace_does_not_truncate_colliding_hash_prefixes() -> None:
-    first = GenerationConfig.from_values(seed=85_151, claim_count=100, service_month="2026-07")
-    second = GenerationConfig.from_values(seed=90_394, claim_count=100, service_month="2026-07")
+    first = GenerationConfig.from_values(seed=38_787, claim_count=100, service_month="2026-07")
+    second = GenerationConfig.from_values(seed=39_584, claim_count=100, service_month="2026-07")
 
     assert first.fingerprint_sha256[:8] == second.fingerprint_sha256[:8]
     assert first.fingerprint_sha256 != second.fingerprint_sha256
@@ -213,6 +213,11 @@ def test_semantic_manifest_validation_rejects_false_evidence(tmp_path: Path) -> 
     with pytest.raises(ManifestValidationError, match=r"generator\.name"):
         validate_manifest(false_generator)
 
+    extra_evidence = copy.deepcopy(manifest)
+    extra_evidence["unapproved_claim"] = True
+    with pytest.raises(ManifestValidationError, match="manifest keys"):
+        validate_manifest(extra_evidence)
+
 
 def test_generated_relationships_and_financial_controls_reconcile(tmp_path: Path) -> None:
     config = GenerationConfig.from_values(seed=20_260_815, claim_count=80, service_month="2026-07")
@@ -241,17 +246,39 @@ def test_generated_relationships_and_financial_controls_reconcile(tmp_path: Path
     line_totals: dict[str, dict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
     money_fields = (
         "billed_amount",
+        "allowed_amount",
         "payer_paid_amount",
         "patient_paid_amount",
+        "patient_responsibility_amount",
         "adjustment_amount",
         "outstanding_balance",
     )
     for row in claim_lines:
+        assert Decimal(row["billed_amount"]) == sum(
+            Decimal(row[field])
+            for field in (
+                "payer_paid_amount",
+                "patient_paid_amount",
+                "adjustment_amount",
+                "outstanding_balance",
+            )
+        )
+        if row["allowed_amount"]:
+            assert Decimal(row["payer_paid_amount"]) + Decimal(
+                row["patient_responsibility_amount"]
+            ) <= Decimal(row["allowed_amount"])
+        assert Decimal(row["patient_paid_amount"]) <= Decimal(row["patient_responsibility_amount"])
         for field in money_fields:
-            line_totals[row["claim_id"]][field] += Decimal(row[field])
+            if row[field]:
+                line_totals[row["claim_id"]][field] += Decimal(row[field])
     for claim in claims:
         for field in money_fields:
-            assert line_totals[claim["claim_id"]][field] == Decimal(claim[field])
+            if claim[field]:
+                assert line_totals[claim["claim_id"]][field] == Decimal(claim[field])
+            else:
+                assert all(
+                    row[field] == "" for row in claim_lines if row["claim_id"] == claim["claim_id"]
+                )
         assert Decimal(claim["billed_amount"]) == sum(
             Decimal(claim[field])
             for field in (
@@ -260,6 +287,13 @@ def test_generated_relationships_and_financial_controls_reconcile(tmp_path: Path
                 "adjustment_amount",
                 "outstanding_balance",
             )
+        )
+        if claim["allowed_amount"]:
+            assert Decimal(claim["payer_paid_amount"]) + Decimal(
+                claim["patient_responsibility_amount"]
+            ) <= Decimal(claim["allowed_amount"])
+        assert Decimal(claim["patient_paid_amount"]) <= Decimal(
+            claim["patient_responsibility_amount"]
         )
 
     payment_totals: dict[str, Decimal] = defaultdict(Decimal)

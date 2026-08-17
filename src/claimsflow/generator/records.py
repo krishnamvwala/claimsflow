@@ -6,6 +6,7 @@ import hashlib
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from typing import overload
 
 from claimsflow.generator.catalog import (
     APPEALS,
@@ -151,6 +152,14 @@ def _claim_amounts(config: GenerationConfig, index: int) -> ClaimAmounts:
         adjustment=adjustment,
         outstanding=0,
     )
+
+
+@overload
+def _split_cents(total: int, parts: int) -> tuple[int, ...]: ...
+
+
+@overload
+def _split_cents(total: None, parts: int) -> tuple[None, ...]: ...
 
 
 def _split_cents(total: int | None, parts: int) -> tuple[int | None, ...]:
@@ -331,12 +340,24 @@ def iter_claim_line_rows(config: GenerationConfig) -> Iterator[Row]:
         reason_code, _, _ = _denial_reason(config, index)
         service_date = _service_date(config, index)
         billed = _split_cents(amounts.billed, line_count)
-        allowed = _split_cents(amounts.allowed, line_count)
         payer_paid = _split_cents(amounts.payer_paid, line_count)
         patient_paid = _split_cents(amounts.patient_paid, line_count)
         patient_responsibility = _split_cents(amounts.patient_responsibility, line_count)
-        adjustment = _split_cents(amounts.adjustment, line_count)
+        allowed = (
+            (None,) * line_count
+            if amounts.allowed is None
+            else tuple(
+                payer_paid[position] + patient_responsibility[position]
+                for position in range(line_count)
+            )
+        )
         outstanding = _split_cents(amounts.outstanding, line_count)
+        adjustment = tuple(
+            billed[position] - payer_paid[position] - patient_paid[position] - outstanding[position]
+            for position in range(line_count)
+        )
+        if any(value < 0 for value in adjustment) or sum(adjustment) != amounts.adjustment:
+            raise AssertionError("claim-line financial allocation must reconcile exactly")
         for offset in range(line_count):
             line_number = offset + 1
             procedure_number = _stable_int(config, "procedure", index + offset, 1, PROCEDURES)

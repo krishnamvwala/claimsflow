@@ -44,6 +44,8 @@ A record with no failed rule is `accepted`. If multiple record rules fail, prece
 | DQ-CMN-010 | Required column is absent | critical | block_batch |
 | DQ-CMN-011 | A different delivery contains the same natural key and same contract-declared version discriminator (`source_updated_at`, or `valid_from` for reference data) as an existing row but a different raw payload hash | critical | block_batch; retain both immutable payloads as collision evidence and do not overwrite or publish the new version |
 | DQ-CMN-012 | A published record lacks one immutable `trusted_published_at`, the timestamp precedes `ingested_at`, or it changes after first trusted publication | critical | block_batch; historical metric cutoffs cannot use ambiguous publication evidence |
+| DQ-CMN-013 | A present source value cannot be parsed within its declared contract type, numeric precision, or scale; or a required value is empty | critical | rejected; retain immutable raw and rule evidence |
+| DQ-CMN-014 | A present source value violates its declared allowed-value, pattern, or numeric-bound constraint | error | quarantined; never guess or coerce an ambiguous value |
 
 ## 4. Permitted automatic normalizations
 
@@ -55,7 +57,7 @@ Only the following deterministic rules may run automatically. Every application 
 | NORM-CMN-002 | Allowed code or enum with alphabetic case differences | Uppercase canonical value |
 | NORM-CMN-003 | Valid ISO 8601 timestamp containing a numeric UTC offset | Equivalent UTC timestamp ending in `Z` |
 | NORM-CMN-004 | Boolean value `TRUE`, `FALSE`, `1`, or `0` | `true` or `false` according to the documented mapping |
-| NORM-CMN-005 | Monetary value with fewer than two fractional digits | Exact two-decimal representation without changing value |
+| NORM-CMN-005 | Fixed-scale numeric value with fewer fractional digits than its declared scale | Exact declared-scale representation without changing value |
 
 Identifiers are never case-folded, truncated, padded, guessed, or cross-walked automatically. Invalid dates, unknown codes, missing relationships, inconsistent financial values, and missing deadlines are ambiguous and must follow their declared quarantine or rejection rule.
 
