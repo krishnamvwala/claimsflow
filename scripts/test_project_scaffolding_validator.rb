@@ -99,6 +99,21 @@ results << assert_failure("unsafe logger field", "structured logger must not con
   end
 end
 
+results << assert_failure("mutable cloud landing upload", "create-only Cloud Storage uploads") do |root|
+  mutate(root, "src/claimsflow/adapters/README.md") do |text|
+    text.sub("`if_generation_match=0`", "an ordinary upload request")
+  end
+end
+
+results << assert_failure("implicit cloud writes", "no implicit cloud writes") do |root|
+  mutate(root, "src/claimsflow/adapters/README.md") do |text|
+    text.sub(
+      "imports, unit tests, and local ingestion perform no cloud write",
+      "imports and local workflows may write to cloud services"
+    )
+  end
+end
+
 results << assert_failure("missing dbt layer", "dbt_project.yml must contain") do |root|
   mutate(root, "analytics/dbt/dbt_project.yml") do |text|
     text.sub("    semantic:\n", "    reporting:\n")

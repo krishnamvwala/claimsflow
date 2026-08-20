@@ -177,8 +177,19 @@ end
 reject_text(logging_config, '"claim_payload"', "structured logger", errors)
 
 adapter_boundary = read_file("src/claimsflow/adapters/README.md", errors)
-require_text(adapter_boundary, "No external writes are implemented in Phase 1", "adapter boundary", errors)
-require_text(adapter_boundary, "dbt", "adapter boundary", errors)
+{
+  "`if_generation_match=0`" => "create-only Cloud Storage uploads",
+  "downloads the exact returned generation" => "generation-pinned Cloud Storage verification",
+  "recompute SHA-256 before" => "cloud checksum verification before raw loading",
+  "deterministic job IDs" => "replay-safe BigQuery jobs",
+  "append-only JSON load jobs" => "append-only BigQuery loads",
+  "synthetic-only boundary" => "synthetic-only enforcement",
+  "metric or transformation logic in dbt" => "dbt-owned transformation logic",
+  "Application Default Credentials only" => "explicit default credential construction",
+  "imports, unit tests, and local ingestion perform no cloud write" => "no implicit cloud writes"
+}.each do |text, label|
+  errors << "adapter boundary must declare #{label}" unless adapter_boundary.include?(text)
+end
 
 dbt_project = read_file("analytics/dbt/dbt_project.yml", errors)
 DBT_LAYERS.each do |layer|
