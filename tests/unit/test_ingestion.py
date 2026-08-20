@@ -613,6 +613,25 @@ def test_managed_workspace_symlinks_cannot_escape_boundary(
         assert target.read_text(encoding="utf-8") == "sentinel"
 
 
+def test_transient_sqlite_sidecar_can_disappear_during_safety_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    registry = SqliteIngestionRegistry(workspace)
+    sidecar = workspace / "ingestion-registry.sqlite3-shm"
+    sidecar.write_bytes(b"")
+    original_resolve = Path.resolve
+
+    def resolve_after_sidecar_disappears(path: Path, strict: bool = False) -> Path:
+        if path == sidecar and sidecar.exists():
+            sidecar.unlink()
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve_after_sidecar_disappears)
+
+    registry._validate_managed_children()
+
+
 def test_concurrent_batches_do_not_double_process_identical_reference_files(
     tmp_path: Path,
 ) -> None:

@@ -156,8 +156,60 @@ results << assert_failure("dbt physical schema drift", "dbt dev/demo schema mapp
   end
 end
 
-results << assert_failure("premature dbt model", "dbt Phase 1 publication boundary must prohibit SQL models") do |root|
+results << assert_failure("unexpected curated model", "dbt Phase 4A model inventory must contain only validated staging SQL") do |root|
   File.write(File.join(root, "analytics/dbt/models/curated/claim.sql"), "select 1 as claim_id\n")
+end
+
+results << assert_failure("missing typed staging model", "dbt Phase 4A model inventory must contain only validated staging SQL") do |root|
+  FileUtils.rm(File.join(root, "analytics/dbt/models/staging/stg_claims.sql"))
+end
+
+results << assert_failure("dbt validated boundary bypass", "dbt staging macro must declare validated-only model dependency") do |root|
+  mutate(root, "analytics/dbt/macros/stage_validated.sql") do |text|
+    text.sub("ref('stg_validated_records')", "source('claimsflow_raw', 'records')")
+  end
+end
+
+results << assert_failure("shared dbt staging alias", "dbt publication-scoped physical aliases") do |root|
+  mutate(root, "analytics/dbt/macros/generate_alias_name.sql") do |text|
+    text.sub("base_alias }}__{{ claimsflow_publication_id()", "base_alias }}{{ claimsflow_publication_id()")
+  end
+end
+
+results << assert_failure("unbound dbt selection alias", "dbt validation-bound physical aliases") do |root|
+  mutate(root, "analytics/dbt/macros/generate_alias_name.sql") do |text|
+    text.sub("__{{ claimsflow_publication_selection_fingerprint() }}", "")
+  end
+end
+
+results << assert_failure("missing dbt validation allowlist", "dbt validated staging base must declare immutable validation allowlist") do |root|
+  mutate(root, "analytics/dbt/models/staging/stg_validated_records.sql") do |text|
+    text.gsub("    and {{ claimsflow_validation_filter('validation_id') }}\n", "")
+  end
+end
+
+results << assert_failure("missing validated record-set gate", "dbt validated staging base must declare immutable validated record-set digest") do |root|
+  mutate(root, "analytics/dbt/models/staging/stg_validated_records.sql") do |text|
+    text.sub(
+      "quality.validated_record_set_sha256 = record_set.computed_record_set_sha256",
+      "quality.validated_record_set_sha256 is not null"
+    )
+  end
+end
+
+results << assert_failure("missing normalized payload digest gate", "dbt validated staging base must declare canonical normalized-payload digest gate") do |root|
+  mutate(root, "analytics/dbt/models/staging/stg_validated_records.sql") do |text|
+    text.sub(
+      "or normalized_payload_sha256 is distinct from computed_normalized_payload_sha256",
+      "or false"
+    )
+  end
+end
+
+results << assert_failure("dbt staging property identity drift", "protected documented publication-scoped contracts") do |root|
+  mutate(root, "analytics/dbt/models/staging/_staging.yml") do |text|
+    text.sub("source_identity: appeals", "source_identity: appeals-unknown")
+  end
 end
 
 results << assert_failure("dbt keyfile", "dbt profile must not contain") do |root|

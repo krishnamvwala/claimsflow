@@ -16,6 +16,10 @@ clean-targets:
   - target
   - dbt_packages
 
+vars:
+  claimsflow_publication_id: ci_phase4a
+  claimsflow_validation_ids: [ci_validation_phase4a]
+
 models:
   claimsflow:
     +persist_docs:
@@ -24,6 +28,10 @@ models:
     staging:
       +materialized: view
       +schema: staging
+      +tags: [validated_staging, phase4a]
+      +meta:
+        owner: ClaimsFlow Data Engineering
+        publication_scoped: true
     intermediate:
       +materialized: ephemeral
       +schema: intermediate

@@ -42,14 +42,19 @@ run.
 7. Reconcile claim-line financial rollups and remittance payment controls.
 8. Assign exactly one final disposition: `accepted`, `accepted_with_warning`, `quarantined`,
    or `rejected`.
-9. Reconcile every final disposition to the immutable raw-row count and block publication
-   for missing sources, critical rejected rows, or failed batch controls.
-10. Atomically publish the run only after its artifact inventory and report are complete,
+9. Reconcile every final disposition to the immutable raw-row count, assign each output row
+   a canonical normalized-payload JSON string and SHA-256, include that checksum in the
+   length-prefixed validation, identity, correction, and disposition evidence, and bind the
+   complete sorted validated-record multiset into a report-level SHA-256.
+10. Block publication for missing sources, critical rejected rows, or failed batch controls.
+11. Atomically publish the run only after its artifact inventory and report are complete,
     then register the report SHA-256 in the durable SQLite control plane.
 
 ## Artifacts
 
-- `validated/records.jsonl` contains accepted and warned normalized synthetic records.
+- `validated/records.jsonl` contains accepted and warned normalized synthetic records, their
+  immutable validation ID, canonical normalized-payload JSON and checksum, and independently
+  reproducible record-evidence SHA-256.
 - `quarantine/records.jsonl` contains ambiguous records and their rule evidence.
 - `rejected/records.jsonl` contains structurally unusable records and critical evidence.
 - `quality/issues.jsonl` contains row, source-freshness, and batch findings with stable rule
@@ -59,7 +64,8 @@ run.
 - `audit/quality-report.json` contains the rule version, exact configuration and implementation
   hashes, the explicit 83-rule inventory across 131 source-identity/rule pairs (including
   not-applicable evidence), hourly evaluation window, source counts, freshness, failed-rule
-  distribution, reconciliation, artifact hashes, and publication gate.
+  distribution, reconciliation, the validated-record count and record-set SHA-256, artifact
+  hashes, and publication gate.
 
 An exact replay in the same governed hourly evaluation window reconstructs every expected
 artifact and report field, verifies the external SQLite report-hash receipt, and returns
