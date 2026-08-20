@@ -2,10 +2,11 @@
 
 ClaimsFlow has a reproducible, synthetic-only project foundation, deterministic Phase 2
 generator, idempotent local ingestion boundary, fake-tested Cloud Storage plus BigQuery
-raw/audit adapters, and a local Phase 3 quality/quarantine gate. The default validation path
-does not contact Google Cloud or create infrastructure. Generated, ingested, and quality-run
-claim rows stay in explicit user-selected local directories unless an authorized caller
-explicitly composes the cloud publication service.
+raw/audit adapters, a local Phase 3 quality/quarantine gate, and Phase 4A publication-scoped
+dbt validated staging. The default validation path does not contact Google Cloud or create
+infrastructure. Generated, ingested, and quality-run claim rows stay in explicit user-selected
+local directories unless an authorized caller explicitly composes the cloud publication
+service.
 
 ## Prerequisites
 
@@ -46,7 +47,8 @@ fixtures, logs, screenshots, Terraform variables, or issue/PR text.
 
 - `make check` runs every offline repository gate.
 - `make check-python` runs Ruff lint/format checks, strict mypy, and pytest.
-- `make dbt-parse` parses the empty Phase 1 dbt project with a non-secret CI profile.
+- `make dbt-parse` verifies generated Phase 4A staging contracts and parses all publication-
+  scoped dbt models and tests with a non-secret CI profile.
 - `uv run --locked claimsflow generate --service-month 2026-07 --claims 1000 --seed 20260815 --output data/generated/demo-2026-07`
   creates a bounded, repeatable fictional delivery without overwriting existing paths.
 - `uv run --locked claimsflow ingest --manifest data/generated/demo-2026-07/manifest.json --workspace data/local-ingestion`
@@ -62,6 +64,9 @@ fixtures, logs, screenshots, Terraform variables, or issue/PR text.
 - [Data quality and quarantine](data-quality-quarantine.md) documents final dispositions,
   immutable correction evidence, exact configuration hashes, durable replay receipts, and
   fail-closed publication behavior.
+- [dbt validated staging](dbt-validated-staging.md) documents the candidate publication ID,
+  immutable validation allowlist, fourteen typed staging models, source interface, and
+  reconciliation tests.
 - `make airflow-up` builds and starts digest-pinned Airflow 3.3.1 at
   `http://127.0.0.1:8080`; the standalone process prints temporary local credentials.
 - `make airflow-down` stops the local Airflow service.
@@ -69,8 +74,9 @@ fixtures, logs, screenshots, Terraform variables, or issue/PR text.
 
 The Airflow DAG uses empty operators in this milestone. It proves orchestration order and
 failure policy but does not yet call the implemented cloud adapters, transform, publish,
-refresh, or alert. dbt contains no business models yet. Terraform validation reads provider
-schemas but does not create resources.
+refresh, or alert. dbt contains validated staging only; curated facts, dimensions, metrics,
+and priority logic remain disabled. Terraform validation reads provider schemas but does not
+create resources.
 
 CI loads the DAG through Airflow's `DagBag` and verifies the exact effective task graph,
 timeouts, retry behavior, trigger rules, pool, and failure callback. The local web port is

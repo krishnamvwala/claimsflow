@@ -15,12 +15,23 @@ REQUIRED_FILES = %w[
   README.md
   analytics/dbt/README.md
   analytics/dbt/dbt_project.yml
+  analytics/dbt/macros/generate_alias_name.sql
   analytics/dbt/macros/generate_schema_name.sql
+  analytics/dbt/macros/publication_scope.sql
+  analytics/dbt/macros/stage_validated.sql
+  analytics/dbt/models/staging/_sources.yml
+  analytics/dbt/models/staging/_staging.yml
   analytics/dbt/models/staging/README.md
+  analytics/dbt/models/staging/stg_validated_records.sql
   analytics/dbt/models/intermediate/README.md
   analytics/dbt/models/curated/README.md
   analytics/dbt/models/semantic/README.md
   analytics/dbt/models/operational/README.md
+  analytics/dbt/tests/staging_publication_scope.sql
+  analytics/dbt/tests/staging_reconciles_to_quality_counts.sql
+  analytics/dbt/tests/staging_reconciles_to_typed_models.sql
+  analytics/dbt/tests/staging_reconciles_to_validated_record_set.sql
+  analytics/dbt/tests/staging_requires_every_validation.sql
   compose.yaml
   config/dbt/profiles.yml
   config/data-quality-policy.yml
@@ -28,6 +39,7 @@ REQUIRED_FILES = %w[
   config/release-manifest.schema.json
   docs/development/README.md
   docs/development/data-quality-quarantine.md
+  docs/development/dbt-validated-staging.md
   docs/development/component-inventory.md
   infra/terraform/environments/dev-demo/README.md
   infra/terraform/environments/dev-demo/.terraform.lock.hcl
@@ -46,6 +58,7 @@ REQUIRED_FILES = %w[
   orchestration/airflow/dags/claimsflow_batch.py
   orchestration/airflow/policy/validate_dag.py
   pyproject.toml
+  scripts/render_dbt_staging_properties.py
   src/claimsflow/cli.py
   src/claimsflow/config.py
   src/claimsflow/domain/quality.py
@@ -56,6 +69,7 @@ REQUIRED_FILES = %w[
   src/claimsflow/quality/service.py
   tests/unit/test_cli.py
   tests/unit/test_config.py
+  tests/unit/test_dbt_staging_contract.py
   tests/unit/test_logging_config.py
   tests/unit/test_quality_engine.py
   tests/unit/test_quality_service.py
@@ -65,6 +79,22 @@ REQUIRED_FILES = %w[
 ].freeze
 
 DBT_LAYERS = %w[staging intermediate curated semantic operational].freeze
+STAGING_MODELS = {
+  "appeals" => "stg_appeals",
+  "claim-lines" => "stg_claim_lines",
+  "claims" => "stg_claims",
+  "denials" => "stg_denials",
+  "eligibility" => "stg_eligibility",
+  "payments" => "stg_payments",
+  "reference-data.denial-reasons" => "stg_reference_denial_reasons",
+  "reference-data.diagnoses" => "stg_reference_diagnoses",
+  "reference-data.facilities" => "stg_reference_facilities",
+  "reference-data.payers" => "stg_reference_payers",
+  "reference-data.plans" => "stg_reference_plans",
+  "reference-data.procedures" => "stg_reference_procedures",
+  "reference-data.providers" => "stg_reference_providers",
+  "remittances" => "stg_remittances"
+}.freeze
 DATASET_LAYERS = %w[raw validated quarantine curated semantic operational audit].freeze
 WORKLOAD_ACCOUNTS = %w[ingestion transformation orchestration bi auditor deployment].freeze
 DAG_TASKS = %w[
@@ -111,6 +141,7 @@ CI_PATHS = %w[
   infra/terraform/**
   orchestration/airflow/**
   pyproject.toml
+  scripts/render_dbt_staging_properties.py
   src/**
   tests/**
   uv.lock
@@ -244,18 +275,184 @@ DBT_LAYERS.each do |layer|
   require_text(dbt_project, "    #{layer}:\n", "dbt_project.yml", errors)
   require_text(dbt_project, "      +schema: #{layer}", "dbt_project.yml", errors)
 end
+require_text(dbt_project, "claimsflow_publication_id: ci_phase4a", "dbt_project.yml", errors)
+require_text(dbt_project, "claimsflow_validation_ids: [ci_validation_phase4a]", "dbt_project.yml", errors)
+require_text(dbt_project, "+tags: [validated_staging, phase4a]", "dbt_project.yml", errors)
+require_text(dbt_project, "publication_scoped: true", "dbt_project.yml", errors)
 
 dbt_readme = read_file("analytics/dbt/README.md", errors)
-require_text(dbt_readme, "Staging models may read only validated relations", "dbt README", errors)
+require_text(dbt_readme, "Phase 4A implements the validated staging boundary", "dbt README", errors)
+require_text(dbt_readme, "validation-selection fingerprint", "dbt README", errors)
 reject_text(dbt_project, "raw_source", "dbt_project.yml", errors)
 if dbt_project.match?(/curated:\s*\n\s+\+materialized:\s*table/)
-  errors << "dbt Phase 1 publication boundary must prohibit curated table models"
+  errors << "dbt Phase 4A publication boundary must prohibit curated table models"
 end
 
 sql_models = Dir.glob(File.join(ROOT, "analytics/dbt/models/**/*.sql"))
-unless sql_models.empty?
-  errors << "dbt Phase 1 publication boundary must prohibit SQL models: #{sql_models.map { |path| relative(path) }.join(', ')}"
+expected_sql_models = ["stg_validated_records", *STAGING_MODELS.values].map do |model|
+  File.join(ROOT, "analytics/dbt/models/staging/#{model}.sql")
+end.sort
+unless sql_models.sort == expected_sql_models
+  missing = expected_sql_models - sql_models
+  unexpected = sql_models - expected_sql_models
+  errors << "dbt Phase 4A model inventory must contain only validated staging SQL: " \
+            "missing=#{missing.map { |path| relative(path) }.sort} " \
+            "unexpected=#{unexpected.map { |path| relative(path) }.sort}"
 end
+
+base_staging = read_file("analytics/dbt/models/staging/stg_validated_records.sql", errors)
+{
+  "source('claimsflow_validated', 'records')" => "validated record source",
+  "source('claimsflow_audit', 'quality_runs')" => "quality-run source",
+  "claimsflow_validation_filter" => "immutable validation allowlist",
+  "publication_allowed is true" => "approved publication gate",
+  "reconciled is true" => "quality reconciliation gate",
+  "decision = 'approved'" => "approved quality decision",
+  "disposition in ('accepted', 'accepted_with_warning')" => "publishable disposition boundary",
+  "computed_record_evidence_sha256" => "recomputed record evidence",
+  "normalized_payload_sha256 is distinct from computed_normalized_payload_sha256" => "canonical normalized-payload digest gate",
+  "quality.validated_record_set_sha256 = record_set.computed_record_set_sha256" => "immutable validated record-set digest",
+  "mismatched_record_evidence_count = 0" => "record-evidence reconciliation gate"
+}.each do |text, label|
+  errors << "dbt validated staging base must declare #{label}" unless base_staging.include?(text)
+end
+
+STAGING_MODELS.each do |identity, model|
+  model_sql = read_file("analytics/dbt/models/staging/#{model}.sql", errors)
+  require_text(model_sql, "claimsflow_stage_validated", "dbt #{model}", errors)
+  require_text(model_sql, "source_identity='#{identity}'", "dbt #{model}", errors)
+  reject_text(model_sql, "source(", "dbt #{model} validated boundary", errors)
+end
+
+publication_scope = read_file("analytics/dbt/macros/publication_scope.sql", errors)
+{
+  "target.name != 'ci'" => "non-CI publication-ID override",
+  "non-empty list of immutable quality validation IDs" => "validation allowlist",
+  "modules.re.fullmatch" => "safe identifier validation",
+  "unique_ids | sort" => "deterministic validation allowlist",
+  "local_md5(canonical_selection)" => "deterministic candidate-selection fingerprint"
+}.each do |text, label|
+  errors << "dbt publication-scope macro must declare #{label}" unless publication_scope.include?(text)
+end
+
+alias_macro = read_file("analytics/dbt/macros/generate_alias_name.sql", errors)
+require_text(alias_macro, "publication_scoped", "dbt publication alias macro", errors)
+require_text(
+  alias_macro,
+  "base_alias }}__{{ claimsflow_publication_id()",
+  "dbt publication-scoped physical aliases",
+  errors
+)
+require_text(
+  alias_macro,
+  "claimsflow_publication_selection_fingerprint()",
+  "dbt validation-bound physical aliases",
+  errors
+)
+
+staging_macro = read_file("analytics/dbt/macros/stage_validated.sql", errors)
+{
+  "ref('stg_validated_records')" => "validated-only model dependency",
+  "safe_cast" => "type-safe scalar projection",
+  "cast([] as array<string>)" => "typed empty string lists",
+  "normalized_payload_canonical_json" => "verified canonical payload projection",
+  "claimsflow_normalized_payload_sha256" => "canonical payload checksum",
+  "unsupported validated source type" => "fail-closed type policy"
+}.each do |text, label|
+  errors << "dbt staging macro must declare #{label}" unless staging_macro.include?(text)
+end
+
+begin
+  staging_sources_text = read_file("analytics/dbt/models/staging/_sources.yml", errors)
+  staging_sources = YAML.safe_load(staging_sources_text)
+  source_inventory = staging_sources.fetch("sources", []).to_h do |source|
+    [source.fetch("name"), source.fetch("tables", []).map { |table| table.fetch("name") }.sort]
+  end
+  unless source_inventory == {
+    "claimsflow_audit" => ["quality_runs"],
+    "claimsflow_validated" => ["records"]
+  }
+    errors << "dbt Phase 4A sources must contain only validated records and quality runs"
+  end
+  %w[
+    record_evidence_sha256
+    normalized_payload_canonical_json
+    normalized_payload_sha256
+    validated_record_evidence_algorithm
+    validated_record_set_algorithm
+    validated_record_count
+    validated_record_set_sha256
+  ].each do |field|
+    errors << "dbt Phase 4A source interface must declare #{field}" unless staging_sources_text.include?(field)
+  end
+rescue Psych::SyntaxError, KeyError, NoMethodError => e
+  errors << "dbt Phase 4A sources must be valid governed YAML: #{e.message}"
+end
+
+begin
+  staging_properties = YAML.safe_load(read_file("analytics/dbt/models/staging/_staging.yml", errors))
+  property_models = staging_properties.fetch("models", [])
+  property_names = property_models.map { |model| model.fetch("name") }
+  unless property_names.sort == STAGING_MODELS.values.sort
+    errors << "dbt Phase 4A properties must document exactly fourteen typed staging models"
+  end
+  property_models.each do |model|
+    metadata = model.dig("config", "meta")
+    unless model.dig("config", "access") == "protected" && model.dig("config", "contract", "enforced") == true &&
+           metadata.is_a?(Hash) && STAGING_MODELS[metadata["source_identity"]] == model["name"] &&
+           metadata["publication_scoped"] == true && model.fetch("columns", []).all? do |column|
+             column["name"].is_a?(String) && column["data_type"].is_a?(String) &&
+               column["description"].is_a?(String) && !column["description"].empty?
+           end
+      errors << "dbt Phase 4A model properties must enforce protected documented publication-scoped contracts"
+    end
+  end
+rescue Psych::SyntaxError, KeyError, NoMethodError => e
+  errors << "dbt Phase 4A properties must be valid governed YAML: #{e.message}"
+end
+
+staging_reconciliation = read_file(
+  "analytics/dbt/tests/staging_reconciles_to_typed_models.sql",
+  errors
+)
+STAGING_MODELS.values.each do |model|
+  require_text(staging_reconciliation, "'#{model}'", "dbt staging reconciliation", errors)
+end
+require_text(
+  read_file("analytics/dbt/tests/staging_reconciles_to_quality_counts.sql", errors),
+  "accepted + warned as expected_validated_rows",
+  "dbt staging count reconciliation",
+  errors
+)
+validated_record_set_test = read_file(
+  "analytics/dbt/tests/staging_reconciles_to_validated_record_set.sql",
+  errors
+)
+{
+  "claimsflow_validated_record_evidence_sha256" => "recomputed row evidence",
+  "claimsflow_normalized_payload_sha256" => "recomputed canonical payload evidence",
+  "normalized_payload_sha256 is distinct from computed_normalized_payload_sha256" => "canonical payload digest comparison",
+  "validated_record_set_sha256\n    is distinct from record_set.computed_record_set_sha256" => "record-set digest comparison",
+  "mismatched_record_evidence_count is distinct from 0" => "per-record evidence comparison"
+}.each do |text, label|
+  errors << "dbt validated record-set test must declare #{label}" unless validated_record_set_test.include?(text)
+end
+require_text(
+  read_file("analytics/dbt/tests/staging_publication_scope.sql", errors),
+  "claimsflow_validation_ids()",
+  "dbt staging candidate-scope test",
+  errors
+)
+require_text(
+  read_file("analytics/dbt/tests/staging_requires_every_validation.sql", errors),
+  "approved_row_count",
+  "dbt required-validation evidence test",
+  errors
+)
+
+properties_generator = read_file("scripts/render_dbt_staging_properties.py", errors)
+require_text(properties_generator, 'parser.add_argument("--check"', "dbt properties generator", errors)
+require_text(properties_generator, "if set(result) != set(MODEL_NAMES)", "dbt properties generator", errors)
 
 dbt_schema_macro = read_file("analytics/dbt/macros/generate_schema_name.sql", errors)
 {
@@ -503,6 +700,7 @@ CI_PATHS.each { |path| require_text(workflow, %(      - "#{path}"), "foundation 
   "ruff format --check ." => "Python format check",
   "mypy" => "Python type check",
   "pytest" => "Python unit tests",
+  "python scripts/render_dbt_staging_properties.py --check" => "generated dbt staging properties",
   "dbt parse" => "dbt parse",
   "docker compose config --quiet" => "Compose validation",
   "docker compose build airflow" => "Airflow image build",
@@ -530,6 +728,20 @@ development_docs = read_file("docs/development/README.md", errors)
 end
 require_text(development_docs, "terraform apply", "development guide", errors)
 require_text(development_docs, "claimsflow validate", "development guide", errors)
+require_text(development_docs, "dbt validated staging", "development guide", errors)
+
+dbt_staging_docs = read_file("docs/development/dbt-validated-staging.md", errors)
+{
+  "claimsflow_publication_id" => "candidate publication identifier",
+  "claimsflow_validation_ids" => "immutable validation allowlist",
+  "selection-fingerprint" => "candidate isolation",
+  "validated_record_set_sha256" => "cryptographic record-set binding",
+  "fourteen typed models" => "complete staging identity inventory",
+  "accepted plus warned" => "quality count reconciliation",
+  "Phase 4B" => "next milestone boundary"
+}.each do |text, label|
+  errors << "dbt validated-staging guide must declare #{label}" unless dbt_staging_docs.include?(text)
+end
 
 quality_docs = read_file("docs/development/data-quality-quarantine.md", errors)
 %w[accepted accepted_with_warning quarantined rejected duplicate_no_op].each do |disposition|

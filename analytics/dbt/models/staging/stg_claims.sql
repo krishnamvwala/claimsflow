@@ -1,0 +1,42 @@
+{{
+  claimsflow_stage_validated(
+    source_identity='claims',
+    fields=[
+      ('claim_id', 'STRING'),
+      ('submission_sequence', 'INTEGER'),
+      ('original_claim_source_system', 'STRING'),
+      ('original_claim_id', 'STRING'),
+      ('original_submission_sequence', 'INTEGER'),
+      ('patient_id', 'STRING'),
+      ('eligibility_source_system', 'STRING'),
+      ('eligibility_id', 'STRING'),
+      ('provider_id', 'STRING'),
+      ('facility_id', 'STRING'),
+      ('payer_id', 'STRING'),
+      ('plan_id', 'STRING'),
+      ('claim_type', 'STRING'),
+      ('claim_status', 'STRING'),
+      ('submission_type', 'STRING'),
+      ('service_from_date', 'DATE'),
+      ('service_to_date', 'DATE'),
+      ('submitted_at', 'TIMESTAMP'),
+      ('first_response_at', 'TIMESTAMP'),
+      ('first_response_disposition', 'STRING'),
+      ('adjudicated_at', 'TIMESTAMP'),
+      ('primary_diagnosis_code', 'STRING'),
+      ('primary_diagnosis_code_system', 'STRING'),
+      ('billed_amount', 'NUMERIC(18,2)'),
+      ('allowed_amount', 'NUMERIC(18,2)'),
+      ('payer_paid_amount', 'NUMERIC(18,2)'),
+      ('patient_paid_amount', 'NUMERIC(18,2)'),
+      ('patient_responsibility_amount', 'NUMERIC(18,2)'),
+      ('adjustment_amount', 'NUMERIC(18,2)'),
+      ('outstanding_balance', 'NUMERIC(18,2)'),
+      ('currency_code', 'STRING'),
+      ('clean_claim_flag', 'BOOLEAN'),
+      ('first_pass_accepted_flag', 'BOOLEAN'),
+      ('filing_deadline_date', 'DATE'),
+      ('source_updated_at', 'TIMESTAMP')
+    ]
+  )
+}}

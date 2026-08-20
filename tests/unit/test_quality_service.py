@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from dataclasses import replace
@@ -64,6 +65,7 @@ def test_complete_synthetic_batch_produces_reconciled_quality_evidence(tmp_path:
     assert result.accepted + result.warned == result.raw_rows
     assert result.quarantined == result.rejected == 0
     assert result.reconciled is True
+    assert report["schema_version"] == "1.1.0"
     assert report["rule_version"] == "1.0.0"
     assert report["rule_execution_manifest"]["cross_source_relationship"] == "executed"
     assert report["artifact_inventory"]
@@ -75,6 +77,55 @@ def test_complete_synthetic_batch_produces_reconciled_quality_evidence(tmp_path:
     assert "reference-data.facilities|DQ-REF-007" in inventory["not_applicable"]
     assert len(report["configuration"]["contracts"]) == 14
     assert len(report["configuration"]["implementation"]) == 4
+    validated_records = [
+        cast(dict[str, Any], json.loads(line))
+        for line in (result.output_directory / "validated/records.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    record_hashes: list[str] = []
+    for record in validated_records:
+        lineage = cast(dict[str, Any], record["lineage"])
+        normalized_payload_canonical_json = json.dumps(
+            record["normalized_payload"],
+            separators=(",", ":"),
+            sort_keys=True,
+            ensure_ascii=True,
+        )
+        normalized_payload_sha256 = hashlib.sha256(
+            normalized_payload_canonical_json.encode("utf-8")
+        ).hexdigest()
+        assert record["normalized_payload_canonical_json"] == normalized_payload_canonical_json
+        assert record["normalized_payload_sha256"] == normalized_payload_sha256
+        values = (
+            ("validation_id", record["validation_id"]),
+            ("batch_id", lineage["batch_id"]),
+            ("source_identity", lineage["source_identity"]),
+            ("source_system", lineage["source_system"]),
+            ("source_record_id", record["source_record_id"]),
+            ("natural_key", record["natural_key"]),
+            ("evaluated_payload_sha256", record["evaluated_payload_sha256"]),
+            ("normalized_payload_sha256", normalized_payload_sha256),
+            ("correction_id", record["correction_id"]),
+            ("disposition", record["disposition"]),
+        )
+        evidence = "|".join(
+            f"{name}=-1:"
+            if value is None
+            else f"{name}={len(cast(str, value).encode('utf-8'))}:{value}"
+            for name, value in values
+        )
+        expected_hash = hashlib.sha256(evidence.encode("utf-8")).hexdigest()
+        assert record["record_evidence_sha256"] == expected_hash
+        assert record["validation_id"] == result.validation_id
+        record_hashes.append(expected_hash)
+    record_set = report["validated_record_set"]
+    assert record_set == {
+        "algorithm": "sha256-sorted-record-evidence-newline-v1",
+        "record_evidence_algorithm": "sha256-length-prefixed-utf8-v2",
+        "record_count": len(validated_records),
+        "sha256": hashlib.sha256("\n".join(sorted(record_hashes)).encode("utf-8")).hexdigest(),
+    }
     receipt = SqliteIngestionRegistry(ingestion.workspace).get_quality_run(result.validation_id)
     assert receipt is not None
     assert receipt.report_sha256 == result.report_sha256

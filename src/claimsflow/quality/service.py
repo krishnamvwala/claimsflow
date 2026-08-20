@@ -43,6 +43,8 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 _INGESTION_REPORT = Path("audit/ingestion-report.json")
 _QUALITY_REPORT = Path("audit/quality-report.json")
+_VALIDATED_RECORD_EVIDENCE_ALGORITHM = "sha256-length-prefixed-utf8-v2"
+_VALIDATED_RECORD_SET_ALGORITHM = "sha256-sorted-record-evidence-newline-v1"
 _IMPLEMENTATION_FILES = (
     ("quality/service.py", Path(__file__)),
     ("quality/engine.py", Path(__file__).with_name("engine.py")),
@@ -66,6 +68,31 @@ def _sha256(path: Path) -> str:
 def _canonical_hash(value: object) -> str:
     encoded = json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _length_prefixed_evidence_value(name: str, value: str | None) -> str:
+    if value is None:
+        return f"{name}=-1:"
+    return f"{name}={len(value.encode('utf-8'))}:{value}"
+
+
+def _validated_record_evidence_sha256(
+    item: EvaluatedRecord, validation_id: str, normalized_payload_sha256: str
+) -> str:
+    values = (
+        ("validation_id", validation_id),
+        ("batch_id", cast(str, item.record.lineage["batch_id"])),
+        ("source_identity", item.record.source_identity),
+        ("source_system", item.record.source_system),
+        ("source_record_id", item.record.source_record_id),
+        ("natural_key", item.record.natural_key),
+        ("evaluated_payload_sha256", item.record.payload_sha256),
+        ("normalized_payload_sha256", normalized_payload_sha256),
+        ("correction_id", item.record.correction_id),
+        ("disposition", item.disposition),
+    )
+    evidence = "|".join(_length_prefixed_evidence_value(name, value) for name, value in values)
+    return hashlib.sha256(evidence.encode("utf-8")).hexdigest()
 
 
 def _duration(value: str) -> timedelta:
@@ -600,15 +627,30 @@ def _enforce_post_correction_uniqueness(
     return tuple(result)
 
 
-def _record_output(item: EvaluatedRecord) -> dict[str, object]:
+def _record_output(item: EvaluatedRecord, validation_id: str) -> dict[str, object]:
+    normalized_payload_canonical_json = json.dumps(
+        item.record.normalized_payload,
+        separators=(",", ":"),
+        sort_keys=True,
+        ensure_ascii=True,
+    )
+    normalized_payload_sha256 = hashlib.sha256(
+        normalized_payload_canonical_json.encode("utf-8")
+    ).hexdigest()
     return {
+        "validation_id": validation_id,
         "synthetic_only": True,
         "lineage": item.record.lineage,
         "source_record_id": item.record.source_record_id,
         "natural_key": item.record.natural_key,
         "evaluated_payload_sha256": item.record.payload_sha256,
+        "normalized_payload_canonical_json": normalized_payload_canonical_json,
+        "normalized_payload_sha256": normalized_payload_sha256,
         "correction_id": item.record.correction_id,
         "disposition": item.disposition,
+        "record_evidence_sha256": _validated_record_evidence_sha256(
+            item, validation_id, normalized_payload_sha256
+        ),
         "issues": [issue.as_dict() for issue in item.issues],
         "original_payload": item.record.original_payload,
         "normalized_payload": item.record.normalized_payload,
@@ -627,7 +669,9 @@ def _write_json_lines(path: Path, values: list[dict[str, object]]) -> None:
 
 
 def _artifact_values(
-    evaluation: QualityEvaluation, correction_history: list[dict[str, object]]
+    evaluation: QualityEvaluation,
+    correction_history: list[dict[str, object]],
+    validation_id: str,
 ) -> dict[Path, list[dict[str, object]]]:
     grouped: dict[str, list[dict[str, object]]] = {
         "validated": [],
@@ -642,7 +686,7 @@ def _artifact_values(
             if item.disposition == "quarantined"
             else "rejected"
         )
-        grouped[destination].append(_record_output(item))
+        grouped[destination].append(_record_output(item, validation_id))
     all_issues = [issue.as_dict() for item in evaluation.records for issue in item.issues]
     all_issues.extend(issue.as_dict() for issue in evaluation.source_findings)
     all_issues.extend(issue.as_dict() for issue in evaluation.batch_findings)
@@ -652,6 +696,20 @@ def _artifact_values(
         Path("rejected/records.jsonl"): grouped["rejected"],
         Path("quality/issues.jsonl"): all_issues,
         Path("corrections/history.jsonl"): correction_history,
+    }
+
+
+def _validated_record_set_evidence(
+    artifacts: dict[Path, list[dict[str, object]]],
+) -> dict[str, object]:
+    values = artifacts[Path("validated/records.jsonl")]
+    record_hashes = sorted(cast(str, item["record_evidence_sha256"]) for item in values)
+    record_set = "\n".join(record_hashes).encode("utf-8")
+    return {
+        "algorithm": _VALIDATED_RECORD_SET_ALGORITHM,
+        "record_evidence_algorithm": _VALIDATED_RECORD_EVIDENCE_ALGORITHM,
+        "record_count": len(record_hashes),
+        "sha256": hashlib.sha256(record_set).hexdigest(),
     }
 
 
@@ -683,6 +741,7 @@ def _report_value(
     rule_inventory: dict[str, list[str]],
     corrections_sha256: str,
     correction_count: int,
+    validated_record_set: dict[str, object],
     artifact_inventory: list[dict[str, object]],
 ) -> dict[str, object]:
     counts = Counter(item.disposition for item in evaluation.records)
@@ -692,7 +751,7 @@ def _report_value(
     failed_rules.update(issue.rule_id for issue in evaluation.source_findings)
     failed_rules.update(issue.rule_id for issue in evaluation.batch_findings)
     return {
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "validation_id": validation_id,
         "rule_version": catalog.rule_version,
         "batch_id": result.batch_id,
@@ -746,6 +805,7 @@ def _report_value(
             "disposition_rows": sum(counts.values()),
             "reconciled": evaluation.reconciled,
         },
+        "validated_record_set": validated_record_set,
         "quality_summary": {
             "row_issue_count": sum(len(item.issues) for item in evaluation.records),
             "source_finding_count": len(evaluation.source_findings),
@@ -915,8 +975,6 @@ def validate_ingestion_quality(
         evaluation_time=evaluated_at,
         batch_generated_at=generated_at,
     )
-    artifacts = _artifact_values(evaluation, correction_history)
-    artifact_inventory = _expected_inventory(artifacts)
     validation_digest = _canonical_hash(
         {
             "batch_id": result.batch_id,
@@ -927,6 +985,9 @@ def validate_ingestion_quality(
         }
     )
     validation_id = f"quality-{result.batch_id}-{validation_digest[:16]}"
+    artifacts = _artifact_values(evaluation, correction_history, validation_id)
+    validated_record_set = _validated_record_set_evidence(artifacts)
+    artifact_inventory = _expected_inventory(artifacts)
     report_value = _report_value(
         result=result,
         validation_id=validation_id,
@@ -938,6 +999,7 @@ def validate_ingestion_quality(
         rule_inventory=rule_inventory,
         corrections_sha256=corrections_sha256,
         correction_count=len(correction_history),
+        validated_record_set=validated_record_set,
         artifact_inventory=artifact_inventory,
     )
     requested_root = (

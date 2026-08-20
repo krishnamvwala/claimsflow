@@ -1,0 +1,54 @@
+version: 2
+
+sources:
+  - name: claimsflow_validated
+    description: >-
+      Synthetic accepted and accepted-with-warning records emitted by the fail-closed
+      Phase 3 quality boundary. Quarantine, rejected, landing, and raw relations are not
+      part of this source contract.
+    database: "{{ env_var('CLAIMSFLOW_GCP_PROJECT', 'claimsflow-synthetic-ci') }}"
+    schema: "{{ env_var('CLAIMSFLOW_VALIDATED_DATASET', 'claimsflow_validated') }}"
+    tables:
+      - name: records
+        identifier: records
+        description: Immutable validated record envelopes, one row per validation result.
+        columns:
+          - {name: validation_id, data_type: string, description: Immutable Phase 3 validation identifier}
+          - {name: synthetic_only, data_type: boolean, description: Mandatory synthetic-data boundary marker}
+          - {name: lineage, data_type: record, description: Source batch file contract and row lineage}
+          - {name: source_record_id, data_type: string, description: Contract-defined source record identity}
+          - {name: natural_key, data_type: string, description: Canonical contract natural-key serialization}
+          - {name: evaluated_payload_sha256, data_type: string, description: Hash of the source-shaped payload evaluated by Phase 3}
+          - {name: normalized_payload_canonical_json, data_type: string, description: Canonically encoded normalized payload consumed by dbt typed projections}
+          - {name: normalized_payload_sha256, data_type: string, description: Phase 3 SHA-256 of the canonical normalized-payload JSON string}
+          - {name: correction_id, data_type: string, description: Optional immutable correction identifier}
+          - {name: disposition, data_type: string, description: Accepted or accepted-with-warning final disposition}
+          - {name: record_evidence_sha256, data_type: string, description: Phase 3 hash of the length-prefixed record identity payload-hash and disposition evidence}
+
+  - name: claimsflow_audit
+    description: Immutable Phase 3 quality-run gate and reconciliation evidence.
+    database: "{{ env_var('CLAIMSFLOW_GCP_PROJECT', 'claimsflow-synthetic-ci') }}"
+    schema: "{{ env_var('CLAIMSFLOW_AUDIT_DATASET', 'claimsflow_audit') }}"
+    tables:
+      - name: quality_runs
+        identifier: quality_runs
+        description: One immutable report projection for each completed quality validation.
+        columns:
+          - {name: validation_id, data_type: string, description: Immutable Phase 3 validation identifier}
+          - {name: batch_id, data_type: string, description: Immutable ingestion batch identifier}
+          - {name: decision, data_type: string, description: Approved or blocked quality decision}
+          - {name: publication_allowed, data_type: boolean, description: Fail-closed publication gate result}
+          - {name: reconciled, data_type: boolean, description: Final disposition reconciliation result}
+          - {name: synthetic_only, data_type: boolean, description: Mandatory synthetic-data boundary marker}
+          - {name: rule_version, data_type: string, description: Governed data-quality rule version}
+          - {name: report_sha256, data_type: string, description: Immutable quality-report checksum}
+          - {name: configuration_sha256, data_type: string, description: Policy contract and implementation configuration checksum}
+          - {name: validated_record_evidence_algorithm, data_type: string, description: Versioned per-record evidence-hash algorithm from the immutable quality report}
+          - {name: validated_record_set_algorithm, data_type: string, description: Versioned ordered record-set digest algorithm from the immutable quality report}
+          - {name: validated_record_count, data_type: integer, description: Number of records cryptographically bound into the validated record set}
+          - {name: validated_record_set_sha256, data_type: string, description: SHA-256 binding the complete ordered validated record-evidence multiset}
+          - {name: evaluation_window_started_at_utc, data_type: timestamp, description: Governed quality evaluation-window start}
+          - {name: accepted, data_type: integer, description: Accepted row count}
+          - {name: warned, data_type: integer, description: Accepted-with-warning row count}
+          - {name: quarantined, data_type: integer, description: Quarantined row count}
+          - {name: rejected, data_type: integer, description: Rejected row count}

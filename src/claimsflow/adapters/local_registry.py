@@ -157,11 +157,7 @@ class SqliteIngestionRegistry:
 
     def _validate_managed_children(self) -> None:
         for name in ("batches", "collisions"):
-            path = self.workspace / name
-            if path.is_symlink() or (path.exists() and not path.is_dir()):
-                raise OSError(f"managed ingestion directory is unsafe: {path}")
-            if path.exists() and path.resolve(strict=True).parent != self._resolved_workspace:
-                raise OSError(f"managed ingestion directory escapes workspace: {path}")
+            self._validate_managed_child(self.workspace / name, directory=True)
         for name in (
             "ingestion-registry.sqlite3",
             "ingestion-registry.sqlite3-wal",
@@ -170,11 +166,33 @@ class SqliteIngestionRegistry:
             ".registry-init.lock",
             ".ingestion.lock",
         ):
-            path = self.workspace / name
-            if path.is_symlink() or (path.exists() and not path.is_file()):
-                raise OSError(f"managed ingestion file is unsafe: {path}")
-            if path.exists() and path.resolve(strict=True).parent != self._resolved_workspace:
-                raise OSError(f"managed ingestion file escapes workspace: {path}")
+            self._validate_managed_child(self.workspace / name, directory=False)
+
+    def _validate_managed_child(self, path: Path, *, directory: bool) -> None:
+        kind = "directory" if directory else "file"
+        for _ in range(3):
+            try:
+                before = path.lstat()
+            except FileNotFoundError:
+                return
+            mode = before.st_mode
+            expected_type = stat.S_ISDIR(mode) if directory else stat.S_ISREG(mode)
+            if stat.S_ISLNK(mode) or not expected_type:
+                raise OSError(f"managed ingestion {kind} is unsafe: {path}")
+            try:
+                resolved = path.resolve(strict=True)
+            except FileNotFoundError:
+                continue
+            try:
+                after = path.lstat()
+            except FileNotFoundError:
+                return
+            if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+                continue
+            if resolved.parent != self._resolved_workspace:
+                raise OSError(f"managed ingestion {kind} escapes workspace: {path}")
+            return
+        raise OSError(f"managed ingestion {kind} changed during validation: {path}")
 
     @contextmanager
     def _file_lock(self, path: Path) -> Iterator[None]:

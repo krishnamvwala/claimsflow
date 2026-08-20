@@ -18,6 +18,7 @@ on:
       - "pyproject.toml"
       - "scripts/validate_project_scaffolding.rb"
       - "scripts/test_project_scaffolding_validator.rb"
+      - "scripts/render_dbt_staging_properties.py"
       - "src/**"
       - "tests/**"
       - "uv.lock"
@@ -41,6 +42,7 @@ on:
       - "pyproject.toml"
       - "scripts/validate_project_scaffolding.rb"
       - "scripts/test_project_scaffolding_validator.rb"
+      - "scripts/render_dbt_staging_properties.py"
       - "src/**"
       - "tests/**"
       - "uv.lock"
@@ -77,6 +79,8 @@ jobs:
         run: uv run --locked mypy
       - name: Run Python unit tests
         run: uv run --locked pytest
+      - name: Verify generated dbt staging properties
+        run: uv run --locked python scripts/render_dbt_staging_properties.py --check
       - name: Parse dbt project
         run: uv run --locked --group dbt dbt parse --project-dir analytics/dbt --profiles-dir config/dbt --target ci --no-partial-parse
 
