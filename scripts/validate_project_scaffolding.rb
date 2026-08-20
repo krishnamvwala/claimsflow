@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "yaml"
 
 ROOT = File.expand_path("..", __dir__)
 
@@ -22,9 +23,11 @@ REQUIRED_FILES = %w[
   analytics/dbt/models/operational/README.md
   compose.yaml
   config/dbt/profiles.yml
+  config/data-quality-policy.yml
   config/release-manifest.example.json
   config/release-manifest.schema.json
   docs/development/README.md
+  docs/development/data-quality-quarantine.md
   docs/development/component-inventory.md
   infra/terraform/environments/dev-demo/README.md
   infra/terraform/environments/dev-demo/.terraform.lock.hcl
@@ -45,10 +48,17 @@ REQUIRED_FILES = %w[
   pyproject.toml
   src/claimsflow/cli.py
   src/claimsflow/config.py
+  src/claimsflow/domain/quality.py
   src/claimsflow/logging_config.py
+  src/claimsflow/quality/__init__.py
+  src/claimsflow/quality/catalog.py
+  src/claimsflow/quality/engine.py
+  src/claimsflow/quality/service.py
   tests/unit/test_cli.py
   tests/unit/test_config.py
   tests/unit/test_logging_config.py
+  tests/unit/test_quality_engine.py
+  tests/unit/test_quality_service.py
   tests/unit/test_release_manifest.py
   uv.lock
   .github/workflows/project-foundation.yml
@@ -160,6 +170,44 @@ environment = read_file(".env.example", errors)
 require_text(environment, "CLAIMSFLOW_SYNTHETIC_ONLY=true", ".env.example", errors)
 require_text(environment, "CLAIMSFLOW_GCP_PROJECT=\n", ".env.example", errors)
 require_text(environment, "CLAIMSFLOW_MAXIMUM_BYTES_BILLED=1073741824", ".env.example", errors)
+
+quality_policy = nil
+begin
+  quality_policy = YAML.safe_load(read_file("config/data-quality-policy.yml", errors))
+rescue Psych::SyntaxError => e
+  errors << "data-quality policy must be valid YAML: #{e.message}"
+end
+if quality_policy.is_a?(Hash)
+  unless quality_policy["schema_version"] == "1.0.0" && quality_policy["rule_version"] == "1.0.0"
+    errors << "data-quality policy must pin schema and rule version 1.0.0"
+  end
+  errors << "data-quality policy must remain synthetic_only=true" unless quality_policy["synthetic_only"] == true
+  unless quality_policy["evaluation_interval"] == "PT1H"
+    errors << "data-quality policy must pin the governed hourly evaluation interval"
+  end
+  freshness_rule = quality_policy["freshness_rule"]
+  unless freshness_rule.is_a?(Hash) &&
+         freshness_rule["id"] == "DQ-CMN-015" &&
+         freshness_rule["severity"] == "warning" &&
+         freshness_rule["disposition"] == "accepted_with_warning"
+    errors << "data-quality freshness policy must remain a non-blocking governed warning"
+  end
+  batch_rules = quality_policy["batch_rules"]
+  expected_batch_rules = %w[critical_outcome missing_source reconciliation]
+  unless batch_rules.is_a?(Hash) && batch_rules.keys.sort == expected_batch_rules &&
+         batch_rules.values.all? { |rule| rule.is_a?(Hash) && rule["disposition"] == "block_batch" }
+    errors << "data-quality policy must declare the exact fail-closed batch rule inventory"
+  end
+  relationship_rules = quality_policy["relationship_rules"]
+  relationship_count = if relationship_rules.is_a?(Hash)
+                         relationship_rules.values.sum { |targets| targets.is_a?(Hash) ? targets.length : 0 }
+                       else
+                         0
+                       end
+  errors << "data-quality policy must map every governed relationship rule" unless relationship_count == 27
+else
+  errors << "data-quality policy root must be an object"
+end
 
 config = read_file("src/claimsflow/config.py", errors)
 require_text(config, 'SUPPORTED_ENVIRONMENTS = frozenset({"local", "dev-demo"})', "Python configuration", errors)
@@ -481,6 +529,25 @@ development_docs = read_file("docs/development/README.md", errors)
   require_text(development_docs, "make #{command}", "development guide", errors)
 end
 require_text(development_docs, "terraform apply", "development guide", errors)
+require_text(development_docs, "claimsflow validate", "development guide", errors)
+
+quality_docs = read_file("docs/development/data-quality-quarantine.md", errors)
+%w[accepted accepted_with_warning quarantined rejected duplicate_no_op].each do |disposition|
+  require_text(quality_docs, disposition, "data-quality guide", errors)
+end
+require_text(quality_docs, "fail-closed publication", "data-quality guide", errors)
+require_text(quality_docs, "without overwriting raw evidence", "data-quality guide", errors)
+require_text(quality_docs, "durable SQLite", "data-quality guide", errors)
+require_text(quality_docs, "implementation hashes", "data-quality guide", errors)
+require_text(quality_docs, "hourly evaluation window", "data-quality guide", errors)
+require_text(quality_docs, "131 source-identity/rule pairs", "data-quality guide", errors)
+
+quality_service = read_file("src/claimsflow/quality/service.py", errors)
+require_text(quality_service, "deterministic semantic reconstruction", "quality service", errors)
+require_text(quality_service, "configuration_sha256", "quality service", errors)
+require_text(quality_service, "_reject_existing_symlink_components", "quality service", errors)
+quality_registry = read_file("src/claimsflow/adapters/local_registry.py", errors)
+require_text(quality_registry, "CREATE TABLE IF NOT EXISTS quality_runs", "quality registry", errors)
 
 inventory = read_file("docs/development/component-inventory.md", errors)
 ["Python", "dbt", "Airflow", "Terraform", "GitHub Actions"].each do |component|

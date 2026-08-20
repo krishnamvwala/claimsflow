@@ -28,6 +28,29 @@ _RESERVED_IDENTIFIER_FIELDS = {
     "source_control_number",
 }
 
+INGESTION_SOURCE_RULE_IDS = frozenset(
+    {
+        "DQ-APL-007",
+        "DQ-CLM-005",
+        "DQ-CLM-006",
+        "DQ-CLM-007",
+        "DQ-CLM-012",
+        "DQ-CLN-006",
+        "DQ-CLN-007",
+        "DQ-CLN-009",
+        "DQ-CLN-010",
+        "DQ-DEN-006",
+        "DQ-DEN-007",
+        "DQ-ELG-005",
+        "DQ-ELG-007",
+        "DQ-PAY-004",
+        "DQ-PAY-011",
+        "DQ-REF-003",
+        "DQ-REM-004",
+        "DQ-REM-007",
+    }
+)
+
 
 def _canonical_json(value: object) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True, ensure_ascii=True)

@@ -266,3 +266,15 @@ class ContractCatalog:
 
     def identities(self) -> tuple[str, ...]:
         return tuple(sorted(definition.source_identity for definition in self._contracts.values()))
+
+    def for_identity(self, source_identity: str) -> SourceFileContract:
+        """Resolve a canonical source identity for correction revalidation."""
+
+        matches = [
+            definition
+            for definition in self._contracts.values()
+            if definition.source_identity == source_identity
+        ]
+        if len(matches) != 1:
+            raise ContractLoadError(f"no unique governed contract for {source_identity}")
+        return matches[0]

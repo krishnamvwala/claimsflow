@@ -1,10 +1,11 @@
 # Local development
 
 ClaimsFlow has a reproducible, synthetic-only project foundation, deterministic Phase 2
-generator, idempotent local ingestion boundary, and fake-tested Cloud Storage plus BigQuery
-raw/audit adapters. The default validation path does not contact Google Cloud or create
-infrastructure. Generated and ingested claim rows stay in explicit user-selected local
-directories unless an authorized caller explicitly composes the cloud publication service.
+generator, idempotent local ingestion boundary, fake-tested Cloud Storage plus BigQuery
+raw/audit adapters, and a local Phase 3 quality/quarantine gate. The default validation path
+does not contact Google Cloud or create infrastructure. Generated, ingested, and quality-run
+claim rows stay in explicit user-selected local directories unless an authorized caller
+explicitly composes the cloud publication service.
 
 ## Prerequisites
 
@@ -51,8 +52,16 @@ fixtures, logs, screenshots, Terraform variables, or issue/PR text.
 - `uv run --locked claimsflow ingest --manifest data/generated/demo-2026-07/manifest.json --workspace data/local-ingestion`
   independently verifies, classifies, reconciles, lands, and registers the delivery. An
   identical replay is an audited `duplicate_no_op` and never republishes rows.
+- `uv run --locked claimsflow validate --batch-id <batch-id> --workspace data/local-ingestion`
+  executes the versioned Phase 3 relationship, effective-reference, freshness, correction,
+  financial-reconciliation, quarantine, configuration-binding, deterministic replay, and
+  publication-gate boundary without cloud writes. Same-hour replay is a verified no-op;
+  later governed hourly windows publish updated freshness evidence.
 - [Cloud raw adapters](cloud-raw-adapters.md) documents the programmatic, generation-pinned
   publication boundary. There is intentionally no default cloud-write CLI command.
+- [Data quality and quarantine](data-quality-quarantine.md) documents final dispositions,
+  immutable correction evidence, exact configuration hashes, durable replay receipts, and
+  fail-closed publication behavior.
 - `make airflow-up` builds and starts digest-pinned Airflow 3.3.1 at
   `http://127.0.0.1:8080`; the standalone process prints temporary local credentials.
 - `make airflow-down` stops the local Airflow service.

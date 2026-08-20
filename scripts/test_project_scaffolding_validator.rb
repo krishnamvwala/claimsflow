@@ -93,6 +93,30 @@ results << assert_failure("real-data flag", ".env.example must contain") do |roo
   end
 end
 
+results << assert_failure("real-data quality policy", "must remain synthetic_only=true") do |root|
+  mutate(root, "config/data-quality-policy.yml") do |text|
+    text.sub("synthetic_only: true", "synthetic_only: false")
+  end
+end
+
+results << assert_failure("blocking freshness policy", "non-blocking governed warning") do |root|
+  mutate(root, "config/data-quality-policy.yml") do |text|
+    text.sub("disposition: accepted_with_warning", "disposition: block_batch")
+  end
+end
+
+results << assert_failure("missing hourly quality window", "governed hourly evaluation interval") do |root|
+  mutate(root, "config/data-quality-policy.yml") do |text|
+    text.sub("evaluation_interval: PT1H\n", "")
+  end
+end
+
+results << assert_failure("missing quality batch gate", "fail-closed batch rule inventory") do |root|
+  mutate(root, "config/data-quality-policy.yml") do |text|
+    text.sub(/  critical_outcome:\n(?:    .*\n){4}/, "")
+  end
+end
+
 results << assert_failure("unsafe logger field", "structured logger must not contain") do |root|
   mutate(root, "src/claimsflow/logging_config.py") do |text|
     text.sub('"code_version",', "\"claim_payload\",\n            \"code_version\",")
@@ -308,6 +332,12 @@ end
 results << assert_failure("trailing whitespace", "has trailing whitespace") do |root|
   mutate(root, "docs/development/README.md") do |text|
     text.sub("# Local development", "# Local development ")
+  end
+end
+
+results << assert_failure("quality identity-rule inventory drift", "131 source-identity/rule pairs") do |root|
+  mutate(root, "docs/development/data-quality-quarantine.md") do |text|
+    text.sub("131 source-identity/rule pairs", "130 source-identity/rule pairs")
   end
 end
 
