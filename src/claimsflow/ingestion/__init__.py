@@ -5,6 +5,10 @@ from datetime import datetime
 from pathlib import Path
 
 from claimsflow.domain.ingestion import IngestionResult
+from claimsflow.ingestion.cloud_publication import (
+    CloudPublicationError,
+    publish_ingestion_to_cloud,
+)
 from claimsflow.ingestion.contracts import ContractCatalog, ContractLoadError
 from claimsflow.ingestion.service import IngestionError
 from claimsflow.ingestion.service import ingest_delivery as _ingest_delivery
@@ -35,8 +39,10 @@ def ingest_delivery(
 
 
 __all__ = [
+    "CloudPublicationError",
     "ContractCatalog",
     "ContractLoadError",
     "IngestionError",
     "ingest_delivery",
+    "publish_ingestion_to_cloud",
 ]

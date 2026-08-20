@@ -1,9 +1,10 @@
 # Local development
 
 ClaimsFlow has a reproducible, synthetic-only project foundation, deterministic Phase 2
-generator, and idempotent local ingestion boundary. The default validation path does not
-contact Google Cloud or create infrastructure. Generated and ingested claim rows stay in
-explicit user-selected local directories.
+generator, idempotent local ingestion boundary, and fake-tested Cloud Storage plus BigQuery
+raw/audit adapters. The default validation path does not contact Google Cloud or create
+infrastructure. Generated and ingested claim rows stay in explicit user-selected local
+directories unless an authorized caller explicitly composes the cloud publication service.
 
 ## Prerequisites
 
@@ -50,15 +51,17 @@ fixtures, logs, screenshots, Terraform variables, or issue/PR text.
 - `uv run --locked claimsflow ingest --manifest data/generated/demo-2026-07/manifest.json --workspace data/local-ingestion`
   independently verifies, classifies, reconciles, lands, and registers the delivery. An
   identical replay is an audited `duplicate_no_op` and never republishes rows.
+- [Cloud raw adapters](cloud-raw-adapters.md) documents the programmatic, generation-pinned
+  publication boundary. There is intentionally no default cloud-write CLI command.
 - `make airflow-up` builds and starts digest-pinned Airflow 3.3.1 at
   `http://127.0.0.1:8080`; the standalone process prints temporary local credentials.
 - `make airflow-down` stops the local Airflow service.
 - `make terraform-validate` formats-checks and validates both Terraform roots.
 
 The Airflow DAG uses empty operators in this milestone. It proves orchestration order and
-failure policy but cannot load, transform, publish, refresh, or alert. dbt contains no
-business models yet. Terraform validation reads provider schemas but does not create
-resources.
+failure policy but does not yet call the implemented cloud adapters, transform, publish,
+refresh, or alert. dbt contains no business models yet. Terraform validation reads provider
+schemas but does not create resources.
 
 CI loads the DAG through Airflow's `DagBag` and verifies the exact effective task graph,
 timeouts, retry behavior, trigger rules, pool, and failure callback. The local web port is
@@ -66,8 +69,9 @@ bound to loopback only.
 
 ## Dev/demo infrastructure safety
 
-Phase 1 defines the future Google Cloud resources; it does not deploy them. Do not run
-`terraform apply` until all of the following exist:
+Terraform defines the future Google Cloud resources and the Python adapters can target them,
+but nothing deploys or writes by default. Do not run `terraform apply` or compose live adapter
+clients until all of the following exist:
 
 1. A dedicated synthetic-only GCP project and access-controlled remote-state bucket.
 2. Reviewed non-secret environment values, the mandatory bounded billing budget, and the
