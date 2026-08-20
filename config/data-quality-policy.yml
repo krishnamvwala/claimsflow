@@ -1,0 +1,64 @@
+schema_version: 1.0.0
+rule_version: 1.0.0
+synthetic_only: true
+evaluation_interval: PT1H
+
+freshness_rule:
+  id: DQ-CMN-015
+  severity: warning
+  disposition: accepted_with_warning
+  reason: Source evidence exceeded its governed maximum age at validation time.
+
+batch_rules:
+  missing_source:
+    id: DQ-REF-008
+    severity: critical
+    disposition: block_batch
+    reason: The complete governed source inventory is required before trusted publication.
+  reconciliation:
+    id: DQ-CMN-006
+    severity: critical
+    disposition: block_batch
+    reason: Final dispositions and financial controls must reconcile to immutable raw evidence.
+  critical_outcome:
+    id: DQ-CMN-016
+    severity: critical
+    disposition: block_batch
+    reason: A critical row outcome blocks dependent trusted publication.
+
+relationship_rules:
+  reference-data.plans:
+    reference-data.payers: DQ-REF-006
+  eligibility:
+    reference-data.payers: DQ-ELG-003
+    reference-data.plans: DQ-ELG-003
+  claims:
+    claims: DQ-CLM-010
+    eligibility: DQ-CLM-011
+    reference-data.providers: DQ-CLM-004
+    reference-data.facilities: DQ-CLM-004
+    reference-data.payers: DQ-CLM-004
+    reference-data.plans: DQ-CLM-004
+    reference-data.diagnoses: DQ-CLM-008
+  claim-lines:
+    claims: DQ-CLN-003
+    reference-data.procedures: DQ-CLN-005
+    reference-data.diagnoses: DQ-CLN-005
+    reference-data.denial-reasons: DQ-CLN-005
+  remittances:
+    reference-data.payers: DQ-REM-003
+    remittances: DQ-REM-008
+  payments:
+    payments: DQ-PAY-008
+    claims: DQ-PAY-003
+    claim-lines: DQ-PAY-003
+    remittances: DQ-PAY-003
+    reference-data.payers: DQ-PAY-003
+  denials:
+    claims: DQ-DEN-003
+    claim-lines: DQ-DEN-003
+    reference-data.payers: DQ-DEN-003
+    reference-data.denial-reasons: DQ-DEN-004
+  appeals:
+    denials: DQ-APL-003
+    claims: DQ-APL-003

@@ -19,6 +19,7 @@ from claimsflow.domain.ingestion import (
     IngestionResult,
     RegistryCollisionError,
 )
+from claimsflow.domain.quality import QualityReceiptCollisionError, QualityRunReceipt
 
 _SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -108,6 +109,20 @@ CREATE TABLE IF NOT EXISTS ingestion_events (
     reason TEXT,
     details_json TEXT
 );
+
+CREATE TABLE IF NOT EXISTS quality_runs (
+    validation_id TEXT PRIMARY KEY,
+    batch_id TEXT NOT NULL REFERENCES batches(batch_id),
+    configuration_sha256 TEXT NOT NULL,
+    evaluation_window_started_at_utc TEXT NOT NULL,
+    corrections_sha256 TEXT NOT NULL,
+    report_path TEXT NOT NULL,
+    report_sha256 TEXT NOT NULL,
+    registered_at_utc TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS quality_runs_batch_id
+ON quality_runs(batch_id, evaluation_window_started_at_utc);
 """
 
 
@@ -249,6 +264,70 @@ class SqliteIngestionRegistry:
             report_sha256=cast(str, row["report_sha256"]),
             occurred_at_utc=cast(str, row["occurred_at_utc"]),
         )
+
+    def get_quality_run(self, validation_id: str) -> QualityRunReceipt | None:
+        """Return the durable report-hash receipt for one quality run."""
+
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM quality_runs WHERE validation_id = ?", (validation_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return QualityRunReceipt(
+            validation_id=cast(str, row["validation_id"]),
+            batch_id=cast(str, row["batch_id"]),
+            configuration_sha256=cast(str, row["configuration_sha256"]),
+            evaluation_window_started_at_utc=cast(str, row["evaluation_window_started_at_utc"]),
+            corrections_sha256=cast(str, row["corrections_sha256"]),
+            report_path=Path(cast(str, row["report_path"])),
+            report_sha256=cast(str, row["report_sha256"]),
+            registered_at_utc=cast(str, row["registered_at_utc"]),
+        )
+
+    def register_quality_run(self, receipt: QualityRunReceipt) -> None:
+        """Atomically register an immutable quality report hash or reject a collision."""
+
+        values = (
+            receipt.validation_id,
+            receipt.batch_id,
+            receipt.configuration_sha256,
+            receipt.evaluation_window_started_at_utc,
+            receipt.corrections_sha256,
+            str(receipt.report_path),
+            receipt.report_sha256,
+            receipt.registered_at_utc,
+        )
+        with closing(self._connect()) as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                existing = connection.execute(
+                    "SELECT * FROM quality_runs WHERE validation_id = ?",
+                    (receipt.validation_id,),
+                ).fetchone()
+                if existing is None:
+                    connection.execute(
+                        "INSERT INTO quality_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?)", values
+                    )
+                else:
+                    registered = (
+                        cast(str, existing["validation_id"]),
+                        cast(str, existing["batch_id"]),
+                        cast(str, existing["configuration_sha256"]),
+                        cast(str, existing["evaluation_window_started_at_utc"]),
+                        cast(str, existing["corrections_sha256"]),
+                        cast(str, existing["report_path"]),
+                        cast(str, existing["report_sha256"]),
+                        cast(str, existing["registered_at_utc"]),
+                    )
+                    if registered != values:
+                        raise QualityReceiptCollisionError(
+                            f"quality receipt collision for {receipt.validation_id}"
+                        )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
 
     def prepare_intent(self, intent: IngestionIntent) -> None:
         with closing(self._connect()) as connection, connection:

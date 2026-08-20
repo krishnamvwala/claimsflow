@@ -196,3 +196,53 @@ def test_ingest_fails_closed_without_synthetic_runtime_boundary(tmp_path: Path) 
     assert stdout.getvalue() == ""
     assert "real data is prohibited" in result["reason"]
     assert not workspace.exists()
+
+
+def test_validate_prints_a_safe_phase3_gate_summary(tmp_path: Path) -> None:
+    delivery = generate_delivery(
+        GenerationConfig.from_values(seed=42, claim_count=4, service_month="2026-07"),
+        tmp_path / "delivery",
+    )
+    workspace = tmp_path / "workspace"
+    ingest_exit = main(
+        [
+            "ingest",
+            "--manifest",
+            str(delivery.manifest_path),
+            "--workspace",
+            str(workspace),
+            "--contracts",
+            str(ROOT / "contracts/source-data"),
+        ],
+        {"CLAIMSFLOW_SYNTHETIC_ONLY": "true"},
+        StringIO(),
+        StringIO(),
+    )
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = main(
+        [
+            "validate",
+            "--batch-id",
+            delivery.batch_id,
+            "--workspace",
+            str(workspace),
+            "--contracts",
+            str(ROOT / "contracts/source-data"),
+            "--policy",
+            str(ROOT / "config/data-quality-policy.yml"),
+        ],
+        {"CLAIMSFLOW_SYNTHETIC_ONLY": "true"},
+        stdout,
+        stderr,
+    )
+
+    result = json.loads(stdout.getvalue())
+    assert ingest_exit == exit_code == 0
+    assert stderr.getvalue() == ""
+    assert result["status"] == "ok"
+    assert result["synthetic_only"] is True
+    assert result["publication_allowed"] is True
+    assert result["reconciled"] is True
+    assert Path(result["report"]).is_file()

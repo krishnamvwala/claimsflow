@@ -13,6 +13,7 @@ from typing import TextIO
 from claimsflow.config import ConfigurationError, RuntimeSettings
 from claimsflow.generator import GenerationConfig, GenerationError, generate_delivery
 from claimsflow.ingestion import IngestionError, ingest_delivery
+from claimsflow.quality import QualityValidationError, validate_ingestion_quality
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -71,6 +72,38 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("contracts/source-data"),
         type=Path,
         help="governed source-contract directory (default: contracts/source-data)",
+    )
+    validate = subparsers.add_parser(
+        "validate",
+        help="run Phase 3 quality, quarantine, reconciliation, and publication gates locally",
+    )
+    validate.add_argument(
+        "--batch-id",
+        required=True,
+        help="registered synthetic ingestion batch to validate",
+    )
+    validate.add_argument(
+        "--workspace",
+        required=True,
+        type=Path,
+        help="local workspace containing the registered ingestion batch",
+    )
+    validate.add_argument(
+        "--contracts",
+        default=Path("contracts/source-data"),
+        type=Path,
+        help="governed source-contract directory (default: contracts/source-data)",
+    )
+    validate.add_argument(
+        "--policy",
+        default=Path("config/data-quality-policy.yml"),
+        type=Path,
+        help="versioned Phase 3 quality policy (default: config/data-quality-policy.yml)",
+    )
+    validate.add_argument(
+        "--output-root",
+        type=Path,
+        help="optional quality-run root outside immutable ingestion artifacts",
     )
     return parser
 
@@ -166,6 +199,52 @@ def main(
             file=output,
         )
         return 0
+
+    if arguments.command == "validate":
+        try:
+            RuntimeSettings.from_mapping(os.environ if environ is None else environ)
+            from claimsflow.adapters.local_registry import SqliteIngestionRegistry
+
+            registry = SqliteIngestionRegistry(arguments.workspace)
+            registered_result = registry.get_batch(arguments.batch_id)
+            if registered_result is None:
+                raise QualityValidationError("registered ingestion batch was not found")
+            quality_result = validate_ingestion_quality(
+                registered_result,
+                arguments.contracts,
+                arguments.policy,
+                output_root=arguments.output_root,
+            )
+        except (ConfigurationError, QualityValidationError, OSError) as error:
+            print(json.dumps({"status": "error", "reason": str(error)}), file=error_output)
+            return 2
+        print(
+            json.dumps(
+                {
+                    "status": "ok" if quality_result.publication_allowed else "blocked",
+                    "synthetic_only": True,
+                    "decision": quality_result.decision,
+                    "publication_allowed": quality_result.publication_allowed,
+                    "validation_id": quality_result.validation_id,
+                    "rule_version": quality_result.rule_version,
+                    "batch_id": quality_result.batch_id,
+                    "output_directory": str(quality_result.output_directory),
+                    "report": str(quality_result.report_path),
+                    "raw_rows": quality_result.raw_rows,
+                    "accepted": quality_result.accepted,
+                    "warned": quality_result.warned,
+                    "quarantined": quality_result.quarantined,
+                    "rejected": quality_result.rejected,
+                    "correction_count": quality_result.correction_count,
+                    "issue_count": quality_result.issue_count,
+                    "blocking_issue_count": quality_result.blocking_issue_count,
+                    "reconciled": quality_result.reconciled,
+                },
+                sort_keys=True,
+            ),
+            file=output,
+        )
+        return 0 if quality_result.publication_allowed else 3
 
     return 2
 
