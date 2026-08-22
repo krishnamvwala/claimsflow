@@ -1,0 +1,183 @@
+version: 2
+
+sources:
+  - name: publication_control
+    description: >-
+      SYNTHETIC-ONLY BigQuery control tables written transactionally by the ClaimsFlow
+      publication repository. BI identities never receive direct access to this source.
+    database: "{{ target.project }}"
+    schema: claimsflow_audit
+    loader: claimsflow-publication-service
+    config:
+      meta:
+        owner: ClaimsFlow Data Engineering
+        synthetic_only: true
+        append_only_except_active_pointer: true
+    tables:
+      - name: publication_manifests
+        description: Immutable candidate manifests and their bounded membership chains.
+        columns:
+          - name: publication_id
+            data_type: string
+          - name: environment
+            data_type: string
+          - name: parent_publication_id
+            data_type: string
+          - name: membership_delta_chain
+            data_type: array<string>
+          - name: membership_mode
+            data_type: string
+          - name: manifest_fingerprint
+            data_type: string
+          - name: candidate_fingerprint
+            data_type: string
+          - name: manifest_json
+            data_type: json
+          - name: created_at_utc
+            data_type: timestamp
+      - name: publication_membership_deltas
+        description: Immutable changed-key mappings and deletion tombstones by publication.
+        columns:
+          - name: publication_id
+            data_type: string
+          - name: sequence
+            data_type: int64
+          - name: logical_relation
+            data_type: string
+          - name: business_key
+            data_type: string
+          - name: result_version_id
+            data_type: string
+          - name: tombstone
+            data_type: boolean
+      - name: publication_result_versions
+        description: Immutable row-version addresses and SHA-256 content evidence.
+        columns:
+          - name: result_version_id
+            data_type: string
+          - name: source_publication_id
+            data_type: string
+          - name: logical_relation
+            data_type: string
+          - name: business_key
+            data_type: string
+          - name: result_sha256
+            data_type: string
+          - name: physical_relation
+            data_type: string
+      - name: publication_candidate_inventory
+        description: Immutable complete business-key and content-hash inventory per candidate.
+        columns:
+          - name: publication_id
+            data_type: string
+          - name: inventory_sequence
+            data_type: int64
+          - name: logical_relation
+            data_type: string
+          - name: business_key
+            data_type: string
+          - name: result_sha256
+            data_type: string
+      - name: active_publications
+        description: >-
+          One preseeded, revision-guarded consumer-visible manifest pointer per environment;
+          publication_id is null until the first activation.
+        columns:
+          - name: environment
+            data_type: string
+          - name: publication_id
+            data_type: string
+          - name: revision
+            data_type: int64
+          - name: updated_at_utc
+            data_type: timestamp
+      - name: publication_activations
+        description: Append-only publication and rollback pointer-movement audit events.
+        columns:
+          - name: event_id
+            data_type: string
+          - name: kind
+            data_type: string
+          - name: environment
+            data_type: string
+          - name: from_publication_id
+            data_type: string
+          - name: to_publication_id
+            data_type: string
+          - name: from_revision
+            data_type: int64
+          - name: to_revision
+            data_type: int64
+          - name: reason
+            data_type: string
+          - name: activated_at_utc
+            data_type: timestamp
+      - name: publication_reservation_locks
+        description: Preseeded hash buckets updated to serialize create-only publication reservations.
+        columns:
+          - name: lock_bucket
+            data_type: int64
+          - name: revision
+            data_type: int64
+
+models:
+  - name: active_publication_membership
+    description: >-
+      Resolves the latest non-tombstoned result version for every governed business key from
+      the one active bounded manifest chain. Failed and partial candidates are unreachable.
+    config:
+      access: protected
+      contract:
+        enforced: true
+      meta:
+        owner: ClaimsFlow Analytics Engineering
+        materialization: view
+        grain: One active result-version mapping per environment, logical relation, and business key
+        purpose: Provide the governed membership boundary for future semantic and operational views
+        source_models:
+          - source:publication_control.publication_manifests
+          - source:publication_control.publication_membership_deltas
+          - source:publication_control.publication_result_versions
+          - source:publication_control.active_publications
+        publication_scoped: false
+    columns:
+      - name: environment
+        description: Environment owning the independently activated pointer.
+        data_type: string
+        data_tests: [not_null]
+      - name: active_publication_id
+        description: Complete manifest currently selected for consumers.
+        data_type: string
+        data_tests: [not_null]
+      - name: active_revision
+        description: Monotonic compare-and-swap revision of the environment pointer.
+        data_type: int64
+        data_tests: [not_null]
+      - name: mapping_publication_id
+        description: Delta or compacted base publication that last mapped this business key.
+        data_type: string
+        data_tests: [not_null]
+      - name: logical_relation
+        description: Governed dimension or fact relation containing the business key.
+        data_type: string
+        data_tests: [not_null]
+      - name: business_key
+        description: Stable business-key identity within the logical relation.
+        data_type: string
+        data_tests: [not_null]
+      - name: result_version_id
+        description: Immutable selected row-version identity.
+        data_type: string
+        data_tests: [not_null]
+      - name: result_source_publication_id
+        description: Candidate publication that physically produced the selected row version.
+        data_type: string
+        data_tests: [not_null]
+      - name: result_sha256
+        description: SHA-256 fingerprint proving the selected result row content.
+        data_type: string
+        data_tests: [not_null]
+      - name: physical_relation
+        description: Isolated candidate relation containing the selected result row.
+        data_type: string
+        data_tests: [not_null]

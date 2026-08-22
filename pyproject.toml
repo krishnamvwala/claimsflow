@@ -40,6 +40,9 @@ packages = ["src/claimsflow"]
 addopts = "-ra --strict-config --strict-markers"
 pythonpath = ["src"]
 testpaths = ["tests/unit"]
+markers = [
+  "gcp_integration: explicitly authorized live synthetic Google Cloud integration test",
+]
 
 [tool.ruff]
 line-length = 100

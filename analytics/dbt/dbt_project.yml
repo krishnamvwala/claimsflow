@@ -19,6 +19,7 @@ clean-targets:
 vars:
   claimsflow_publication_id: ci_phase4a
   claimsflow_validation_ids: [ci_validation_phase4a]
+  claimsflow_code_commit: "0000000000000000000000000000000000000000"
 
 models:
   claimsflow:
@@ -49,6 +50,13 @@ models:
         +meta:
           owner: ClaimsFlow Analytics Engineering
           publication_scoped: true
+    publication:
+      +materialized: view
+      +schema: curated
+      +tags: [publication_control, phase4b3]
+      +meta:
+        owner: ClaimsFlow Analytics Engineering
+        publication_scoped: false
     semantic:
       +materialized: view
       +schema: semantic

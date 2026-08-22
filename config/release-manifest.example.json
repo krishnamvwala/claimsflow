@@ -23,7 +23,7 @@
   "included_batch_ids": [],
   "known_limitations": [
     "SYNTHETIC DATA ONLY — NOT FOR PRODUCTION OR CLINICAL/BILLING USE",
-    "Local ingestion is implemented; cloud loading, trusted publication, and analytical models are not implemented."
+    "Safe warehouse publication is implemented and fake-tested; live cloud execution, semantic metrics, priority logic, dashboards, and automated deployment remain deferred."
   ],
   "approved_by": "local-development-only",
   "approved_at_utc": "2026-08-14T00:00:00Z"

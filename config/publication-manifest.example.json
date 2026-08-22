@@ -1,0 +1,100 @@
+{
+  "schema_version": "1.0.0",
+  "publication_id": "demo_20260822_01",
+  "parent_publication_id": null,
+  "membership_delta_chain": ["demo_20260822_01"],
+  "membership_mode": "delta",
+  "environment": "dev-demo",
+  "code_commit": "0000000000000000000000000000000000000000",
+  "dbt_validation_selection_fingerprint": "00000000000000000000000000000000",
+  "dbt_candidate_build_fingerprint": "692b01f544234a74b09c7b754f0ae32b",
+  "dbt_artifact_version": "1.12.2",
+  "dbt_artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "included_batch_ids": ["batch-20260822-001"],
+  "contract_version": "1.0.0",
+  "dictionary_version": "1.0.0",
+  "warehouse_partition_ranges": [
+    {
+      "relation": "fact_claim",
+      "start_date": "2026-07-01",
+      "end_date": "2026-07-31"
+    }
+  ],
+  "bi_partition_ranges": [
+    {
+      "relation": "fact_claim",
+      "start_date": "2026-07-01",
+      "end_date": "2026-07-31"
+    }
+  ],
+  "impact_bounded": true,
+  "full_bi_refresh_required": false,
+  "gate_results": [
+    {
+      "name": "validation",
+      "status": "passed",
+      "evidence_ref": "artifacts/quality-summary.json",
+      "evidence_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "dbt_build",
+      "status": "passed",
+      "evidence_ref": "artifacts/run_results.json",
+      "evidence_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "freshness",
+      "status": "passed",
+      "evidence_ref": "artifacts/freshness.json",
+      "evidence_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "row_reconciliation",
+      "status": "passed",
+      "evidence_ref": "artifacts/row-reconciliation.json",
+      "evidence_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "financial_reconciliation",
+      "status": "passed",
+      "evidence_ref": "artifacts/financial-reconciliation.json",
+      "evidence_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "published_relations": [
+    {
+      "logical_name": "fact_claim",
+      "business_key_column": "claim_fact_id",
+      "candidate_relation": "claimsflow-demo-synthetic.claimsflow_curated.fact_claim__demo_20260822_01__00000000000000000000000000000000__692b01f544234a74b09c7b754f0ae32b"
+    }
+  ],
+  "relation_inventories": [
+    {
+      "logical_relation": "fact_claim",
+      "row_count": 100,
+      "inventory_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "row_reconciliations": [
+    {
+      "logical_relation": "fact_claim",
+      "expected_rows": 100,
+      "actual_rows": 100,
+      "reconciled": true
+    }
+  ],
+  "financial_reconciliations": [
+    {
+      "logical_relation": "fact_claim",
+      "measure": "total_billed_amount",
+      "expected_amount": "125000.00",
+      "actual_amount": "125000.00",
+      "tolerance": "0.00",
+      "variance": "0.00",
+      "currency": "USD",
+      "reconciled": true
+    }
+  ],
+  "created_at_utc": "2026-08-22T15:00:00Z",
+  "synthetic_only": true
+}

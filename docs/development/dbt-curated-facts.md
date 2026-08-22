@@ -62,7 +62,7 @@ uv run --locked --group dbt dbt build \
   --profiles-dir config/dbt \
   --target dev_demo \
   --select tag:validated_staging tag:curated_dimensions tag:curated_facts \
-  --vars '{claimsflow_publication_id: demo_20260822_01, claimsflow_validation_ids: [validation_id_here]}'
+  --vars "{claimsflow_publication_id: demo_20260822_01, claimsflow_validation_ids: [validation_id_here], claimsflow_code_commit: '$(git rev-parse HEAD)'}"
 ```
 
 The three tags must be built together for a new publication ID so that its staging views,

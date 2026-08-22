@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
 import sys
@@ -192,13 +194,17 @@ def test_candidate_alias_and_validation_allowlist_fail_closed() -> None:
     alias = (DBT / "macros" / "generate_alias_name.sql").read_text(encoding="utf-8")
     assert "claimsflow_publication_id: ci_phase4a" in project
     assert "claimsflow_validation_ids: [ci_validation_phase4a]" in project
+    assert 'claimsflow_code_commit: "0000000000000000000000000000000000000000"' in project
     assert "target.name != 'ci'" in scope
     assert "unique claimsflow_publication_id" in scope
     assert "non-empty list of immutable quality validation IDs" in scope
     assert "local_md5(canonical_selection)" in scope
+    assert "non-placeholder claimsflow_code_commit" in scope
+    assert "local_md5(canonical_build)" in scope
     assert "publication_scoped" in alias
     assert "base_alias }}__{{ claimsflow_publication_id()" in alias
     assert "claimsflow_publication_selection_fingerprint()" in alias
+    assert "claimsflow_candidate_build_fingerprint()" in alias
     staging_macro = (DBT / "macros" / "stage_validated.sql").read_text(encoding="utf-8")
     assert (
         "sha256(cast({{ record_alias }}.normalized_payload_canonical_json as string))"
@@ -206,6 +212,61 @@ def test_candidate_alias_and_validation_allowlist_fail_closed() -> None:
     )
     assert "claimsflow_json_value('normalized_payload_canonical_json'" in staging_macro
     assert "claimsflow_json_value('normalized_payload'," not in staging_macro
+
+
+def test_publication_alias_changes_when_code_commit_changes(tmp_path: Path) -> None:
+    dbt = Path(sys.executable).with_name("dbt")
+    assert dbt.is_file()
+
+    def compiled_alias(code_commit: str, run_name: str) -> str:
+        completed = subprocess.run(
+            [
+                str(dbt),
+                "--quiet",
+                "ls",
+                "--project-dir",
+                str(DBT),
+                "--profiles-dir",
+                str(ROOT / "config" / "dbt"),
+                "--target",
+                "dev_demo",
+                "--no-partial-parse",
+                "--select",
+                "stg_claims",
+                "--resource-type",
+                "model",
+                "--output",
+                "json",
+                "--output-keys",
+                "alias",
+                "--vars",
+                (
+                    "{claimsflow_publication_id: immutable_alias, "
+                    "claimsflow_validation_ids: [immutable_validation], "
+                    f"claimsflow_code_commit: '{code_commit}'}}"
+                ),
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "DBT_TARGET_PATH": str(tmp_path / f"target-{run_name}"),
+                "DBT_LOG_PATH": str(tmp_path / f"logs-{run_name}"),
+            },
+        )
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+        lines = [line for line in completed.stdout.splitlines() if line.startswith("{")]
+        assert len(lines) == 1
+        return str(json.loads(lines[0])["alias"])
+
+    first = compiled_alias("1" * 40, "first")
+    second = compiled_alias("2" * 40, "second")
+
+    assert first != second
+    assert first.startswith("stg_claims__immutable_alias__")
+    assert second.startswith("stg_claims__immutable_alias__")
 
 
 def test_reconciliation_tests_cover_every_typed_staging_model() -> None:

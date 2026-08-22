@@ -295,7 +295,8 @@ def test_curated_fact_and_full_candidate_selectors_include_every_release_gate() 
             "--vars",
             (
                 "{claimsflow_publication_id: fact_selector_regression, "
-                "claimsflow_validation_ids: [fact_selector_validation]}"
+                "claimsflow_validation_ids: [fact_selector_validation], "
+                "claimsflow_code_commit: '1111111111111111111111111111111111111111'}"
             ),
         ],
         cwd=ROOT,

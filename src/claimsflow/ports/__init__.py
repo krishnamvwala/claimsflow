@@ -1,1 +1,1 @@
-"""Interfaces implemented by future cloud and local adapters."""
+"""Infrastructure-independent ingestion, cloud, and publication interfaces."""

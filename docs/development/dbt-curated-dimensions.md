@@ -48,7 +48,7 @@ uv run --locked --group dbt dbt build \
   --profiles-dir config/dbt \
   --target dev_demo \
   --select tag:curated_dimensions \
-  --vars '{claimsflow_publication_id: demo_20260821_01, claimsflow_validation_ids: [validation_id_here]}'
+  --vars "{claimsflow_publication_id: demo_20260821_01, claimsflow_validation_ids: [validation_id_here], claimsflow_code_commit: '$(git rev-parse HEAD)'}"
 ```
 
 The candidate must pass all of these gates before later publication logic can reference it:

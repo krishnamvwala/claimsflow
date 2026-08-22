@@ -1,7 +1,7 @@
 # Adapter boundary
 
 This directory contains the local SQLite ingestion registry, the Cloud Storage landing
-adapter, and the BigQuery raw/audit adapter. The local adapter stores control-plane, lineage,
+adapter, the BigQuery raw/audit adapter, and the BigQuery safe-publication repository. The local adapter stores control-plane, lineage,
 hash, and disposition evidence; immutable source payloads remain in the explicitly selected
 local batch artifact directory until an authorized caller composes the cloud publication
 service. Every adapter implements an interface in `claimsflow.ports`, preserves the
@@ -19,3 +19,10 @@ raw loading. `bigquery_raw.py` uses deterministic job IDs, append-only JSON load
 schemas, ingestion-time partitioning for raw tables, event-time partitioning for audit, and
 exact output-row reconciliation. Default clients use Application Default Credentials only
 when explicitly constructed; imports, unit tests, and local ingestion perform no cloud write.
+
+`bigquery_publication.py` creates immutable manifest, complete candidate-inventory,
+membership-delta, result-version, and activation evidence with transactional BigQuery scripts.
+Preseeded reservation buckets serialize publication-ID creation, and a preseeded environment
+row makes every pointer transition a revision- and parent-guarded compare-and-swap update.
+`in_memory_publication.py` implements the same port for deterministic local tests and
+demonstrations.
