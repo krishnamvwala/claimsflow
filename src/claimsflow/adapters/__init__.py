@@ -1,1 +1,1 @@
-"""Adapter namespace; cloud implementations arrive in the ingestion milestone."""
+"""Local, cloud-ingestion, and safe-publication adapter namespace."""

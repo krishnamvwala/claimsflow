@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claimsflow.example/schemas/publication-manifest.schema.json",
+  "title": "ClaimsFlow warehouse publication manifest",
+  "description": "Immutable synthetic-only evidence for one isolated warehouse candidate.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "publicationId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{2,47}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "md5Fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "semanticVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+    },
+    "logicalRelation": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,127}$"
+    },
+    "partitionRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relation", "start_date", "end_date"],
+      "properties": {
+        "relation": { "$ref": "#/$defs/logicalRelation" },
+        "start_date": { "type": "string", "format": "date" },
+        "end_date": { "type": "string", "format": "date" }
+      }
+    },
+    "gateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status", "evidence_ref", "evidence_sha256"],
+      "properties": {
+        "name": { "$ref": "#/$defs/logicalRelation" },
+        "status": { "enum": ["passed", "failed"] },
+        "evidence_ref": { "type": "string", "minLength": 1 },
+        "evidence_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "publishedRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logical_name", "business_key_column", "candidate_relation"],
+      "properties": {
+        "logical_name": { "$ref": "#/$defs/logicalRelation" },
+        "business_key_column": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+        },
+        "candidate_relation": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_-]{0,1023}(?:\\.[A-Za-z_][A-Za-z0-9_-]{0,1023}){1,2}$"
+        }
+      }
+    },
+    "relationInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logical_relation", "row_count", "inventory_sha256"],
+      "properties": {
+        "logical_relation": { "$ref": "#/$defs/logicalRelation" },
+        "row_count": { "type": "integer", "minimum": 0 },
+        "inventory_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "rowReconciliation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logical_relation", "expected_rows", "actual_rows", "reconciled"],
+      "properties": {
+        "logical_relation": { "$ref": "#/$defs/logicalRelation" },
+        "expected_rows": { "type": "integer", "minimum": 0 },
+        "actual_rows": { "type": "integer", "minimum": 0 },
+        "reconciled": { "type": "boolean" }
+      }
+    },
+    "financialReconciliation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logical_relation",
+        "measure",
+        "expected_amount",
+        "actual_amount",
+        "tolerance",
+        "variance",
+        "currency",
+        "reconciled"
+      ],
+      "properties": {
+        "logical_relation": { "$ref": "#/$defs/logicalRelation" },
+        "measure": { "$ref": "#/$defs/logicalRelation" },
+        "expected_amount": { "type": "string", "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$" },
+        "actual_amount": { "type": "string", "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$" },
+        "tolerance": { "type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+)?$" },
+        "variance": { "type": "string", "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$" },
+        "currency": { "const": "USD" },
+        "reconciled": { "type": "boolean" }
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "publication_id",
+    "parent_publication_id",
+    "membership_delta_chain",
+    "membership_mode",
+    "environment",
+    "code_commit",
+    "dbt_validation_selection_fingerprint",
+    "dbt_candidate_build_fingerprint",
+    "dbt_artifact_version",
+    "dbt_artifact_sha256",
+    "included_batch_ids",
+    "contract_version",
+    "dictionary_version",
+    "warehouse_partition_ranges",
+    "bi_partition_ranges",
+    "impact_bounded",
+    "full_bi_refresh_required",
+    "gate_results",
+    "published_relations",
+    "relation_inventories",
+    "row_reconciliations",
+    "financial_reconciliations",
+    "created_at_utc",
+    "synthetic_only"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": { "impact_bounded": { "const": true } },
+        "required": ["impact_bounded"]
+      },
+      "then": {
+        "properties": {
+          "full_bi_refresh_required": { "const": false },
+          "warehouse_partition_ranges": { "minItems": 1 },
+          "bi_partition_ranges": { "minItems": 1 }
+        }
+      },
+      "else": {
+        "properties": {
+          "full_bi_refresh_required": { "const": true },
+          "bi_partition_ranges": { "maxItems": 0 }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "publication_id": { "$ref": "#/$defs/publicationId" },
+    "parent_publication_id": {
+      "oneOf": [
+        { "$ref": "#/$defs/publicationId" },
+        { "type": "null" }
+      ]
+    },
+    "membership_delta_chain": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/publicationId" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "membership_mode": { "enum": ["delta", "base"] },
+    "environment": { "enum": ["local", "dev-demo"] },
+    "code_commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "dbt_validation_selection_fingerprint": { "$ref": "#/$defs/md5Fingerprint" },
+    "dbt_candidate_build_fingerprint": { "$ref": "#/$defs/md5Fingerprint" },
+    "dbt_artifact_version": { "$ref": "#/$defs/semanticVersion" },
+    "dbt_artifact_sha256": { "$ref": "#/$defs/sha256" },
+    "included_batch_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{2,159}$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "contract_version": { "$ref": "#/$defs/semanticVersion" },
+    "dictionary_version": { "$ref": "#/$defs/semanticVersion" },
+    "warehouse_partition_ranges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/partitionRange" }
+    },
+    "bi_partition_ranges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/partitionRange" }
+    },
+    "impact_bounded": { "type": "boolean" },
+    "full_bi_refresh_required": { "type": "boolean" },
+    "gate_results": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/gateResult" },
+      "minItems": 5
+    },
+    "published_relations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/publishedRelation" },
+      "minItems": 1
+    },
+    "relation_inventories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/relationInventory" },
+      "minItems": 1
+    },
+    "row_reconciliations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rowReconciliation" },
+      "minItems": 1
+    },
+    "financial_reconciliations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/financialReconciliation" }
+    },
+    "created_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "synthetic_only": { "const": true }
+  }
+}

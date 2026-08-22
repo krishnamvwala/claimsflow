@@ -269,6 +269,12 @@ results << assert_failure("unbound dbt selection alias", "dbt validation-bound p
   end
 end
 
+results << assert_failure("unbound dbt code alias", "dbt code-bound physical aliases") do |root|
+  mutate(root, "analytics/dbt/macros/generate_alias_name.sql") do |text|
+    text.sub("__{{ claimsflow_candidate_build_fingerprint() }}", "")
+  end
+end
+
 results << assert_failure("missing dbt validation allowlist", "dbt validated staging base must declare immutable validation allowlist") do |root|
   mutate(root, "analytics/dbt/models/staging/stg_validated_records.sql") do |text|
     text.gsub("    and {{ claimsflow_validation_filter('validation_id') }}\n", "")

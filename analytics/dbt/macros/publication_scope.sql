@@ -52,3 +52,28 @@
   {%- set canonical_selection = 'validated-staging-v1\n' ~ (validation_ids | join('\n')) -%}
   {{ return(local_md5(canonical_selection)) }}
 {%- endmacro %}
+
+{% macro claimsflow_code_commit() -%}
+  {%- set code_commit = var('claimsflow_code_commit', none) -%}
+  {%- if code_commit is not string
+        or modules.re.fullmatch('^[0-9a-f]{40}$', code_commit) is none -%}
+    {{ exceptions.raise_compiler_error(
+      "claimsflow_code_commit must be the exact lowercase 40-character Git commit"
+    ) }}
+  {%- endif -%}
+  {%- if target.name != 'ci'
+        and code_commit == '0000000000000000000000000000000000000000' -%}
+    {{ exceptions.raise_compiler_error(
+      "non-CI dbt runs must provide the exact non-placeholder claimsflow_code_commit"
+    ) }}
+  {%- endif -%}
+  {{ return(code_commit) }}
+{%- endmacro %}
+
+{% macro claimsflow_candidate_build_fingerprint() -%}
+  {%- set canonical_build = 'candidate-build-v1\n'
+      ~ claimsflow_publication_id() ~ '\n'
+      ~ claimsflow_publication_selection_fingerprint() ~ '\n'
+      ~ claimsflow_code_commit() -%}
+  {{ return(local_md5(canonical_build)) }}
+{%- endmacro %}

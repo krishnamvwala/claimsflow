@@ -4,7 +4,7 @@ Healthcare claims analytics, denial prevention, and revenue recovery platform bu
 
 ## Project status
 
-ClaimsFlow has completed the Phase 0 discovery/success-contract baseline, Phase 1 implementation foundation, Phase 2 ingestion boundary, Phase 3 quality gate, Phase 4A validated dbt staging, Phase 4B.1 conformed dimensions, and Phase 4B.2 curated facts. Requirements, acceptance criteria, machine-readable source-data contracts, the governed metric dictionary, and seven accepted architecture decisions are documented and automatically validated.
+ClaimsFlow has completed the Phase 0 discovery/success-contract baseline, Phase 1 implementation foundation, Phase 2 ingestion boundary, Phase 3 quality gate, Phase 4A validated dbt staging, Phase 4B.1 conformed dimensions, Phase 4B.2 curated facts, and Phase 4B.3 safe warehouse publication. Requirements, acceptance criteria, machine-readable source-data contracts, the governed metric dictionary, and seven accepted architecture decisions are documented and automatically validated.
 
 Phase 1 adds pinned Python tooling, the typed package and CLI boundary, an empty parseable dbt project, an inert fail-closed Airflow DAG in Docker, guarded Terraform local and dev/demo roots, release-manifest configuration, component-aware CI, and offline policy tests. It creates no cloud resources and implements no claims business logic.
 
@@ -12,7 +12,7 @@ The Phase 2 generator creates bounded fictional source deliveries for all eight 
 
 The Phase 3 quality slice verifies the complete ingestion artifact inventory, binds each run to exact policy, contract, and implementation hashes, applies all 83 governed source rules across 131 source-identity/rule pairs with explicit not-applicable evidence, writes separate validated/quarantine/rejected evidence, binds every canonical normalized payload, validated row, and the complete sorted validated record set to deterministic SHA-256 evidence, preserves synthetic corrections without overwriting raw values, and blocks dependent publication for critical or unreconciled outcomes. Same-window replay reconstructs the expected evidence and verifies a durable report-hash receipt; later hourly windows refresh freshness evidence.
 
-Phase 4A adds publication-isolated dbt staging for all fourteen governed source identities. A candidate build must provide one safe publication ID and an explicit immutable validation-ID allowlist. dbt hashes the exact canonical normalized payload used by typed fields, then reconciles the Phase 3 per-record and complete record-set evidence before exposing source-conformed views. Physical aliases include both the publication ID and deterministic validation-selection fingerprint, preventing a reused name with different inputs from replacing an earlier candidate. Contract, uniqueness, scope, detail, count, and cryptographic record-set reconciliation tests fail closed.
+Phase 4A adds publication-isolated dbt staging for all fourteen governed source identities. A candidate build must provide one safe publication ID, an explicit immutable validation-ID allowlist, and the exact Git commit. dbt hashes the exact canonical normalized payload used by typed fields, then reconciles the Phase 3 per-record and complete record-set evidence before exposing source-conformed views. Physical aliases include the publication ID, deterministic validation-selection fingerprint, and code-bound build fingerprint, preventing a reused name with different inputs or code from replacing an earlier candidate. Contract, uniqueness, scope, detail, count, and cryptographic record-set reconciliation tests fail closed.
 
 Phase 4B.1 adds nine publication-isolated conformed dimensions. Effective-dated payer, plan,
 provider, facility, diagnosis, procedure, and denial-reason history is preserved with
@@ -25,8 +25,16 @@ Phase 4B.2 adds publication-isolated claim, claim-line, payment, denial, and app
 their governed source grains. Deterministic keys bind parent facts, ordered line diagnoses,
 effective-dated dimensions, and calendar roles. Exact row and amount reconciliation,
 claim-to-line rollups, payment signs, exposure/recovery controls, relationship checks, and
-candidate-scope tests block an invalid fact candidate. Membership deltas, governed metrics,
-priority logic, dashboards, and live cloud execution remain deferred.
+candidate-scope tests block an invalid fact candidate.
+
+Phase 4B.3 adds immutable result-version references, complete final key/hash inventories,
+exact changed-key membership deltas, strict publication manifests, mandatory gate evidence,
+serialized create-only reservations, revision-guarded active-manifest advancement,
+bounded-chain compaction, and exact pointer-only rollback. Failed candidates are retained but
+their result versions remain untrusted and unreachable. A governed dbt view resolves only the
+latest non-tombstoned mapping from the active chain and verifies it against the active
+inventory. Governed semantic metrics, priority logic, dashboards, orchestration composition,
+and live cloud execution remain deferred.
 
 ## Quick start
 
@@ -82,3 +90,4 @@ commands, boundaries, and troubleshooting.
 - [dbt validated-staging guide](docs/development/dbt-validated-staging.md)
 - [dbt curated-dimension guide](docs/development/dbt-curated-dimensions.md)
 - [dbt curated-fact guide](docs/development/dbt-curated-facts.md)
+- [Safe publication and rollback guide](docs/development/safe-publication.md)

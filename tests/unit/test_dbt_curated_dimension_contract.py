@@ -245,7 +245,8 @@ def test_curated_selector_includes_date_span_release_gate() -> None:
             "--vars",
             (
                 "{claimsflow_publication_id: selector_regression, "
-                "claimsflow_validation_ids: [selector_validation]}"
+                "claimsflow_validation_ids: [selector_validation], "
+                "claimsflow_code_commit: '1111111111111111111111111111111111111111'}"
             ),
         ],
         cwd=ROOT,

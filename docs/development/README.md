@@ -4,7 +4,8 @@ ClaimsFlow has a reproducible, synthetic-only project foundation, deterministic 
 generator, idempotent local ingestion boundary, fake-tested Cloud Storage plus BigQuery
 raw/audit adapters, a local Phase 3 quality/quarantine gate, Phase 4A publication-scoped
 dbt validated staging, Phase 4B.1 publication-scoped dbt curated dimensions, and Phase 4B.2
-publication-scoped dbt curated facts. The default validation path does not contact Google Cloud or create
+publication-scoped dbt curated facts, plus the Phase 4B.3 safe-publication control plane and
+active-membership view. The default validation path does not contact Google Cloud or create
 infrastructure. Generated, ingested, and quality-run claim rows stay in explicit user-selected
 local directories unless an authorized caller explicitly composes the cloud publication
 service.
@@ -49,8 +50,8 @@ fixtures, logs, screenshots, Terraform variables, or issue/PR text.
 - `make check` runs every offline repository gate.
 - `make check-python` runs Ruff lint/format checks, strict mypy, and pytest.
 - `make dbt-parse` verifies generated Phase 4A staging, Phase 4B.1 dimension, and Phase 4B.2
-  fact contracts and parses all publication-scoped dbt models and tests with a non-secret CI
-  profile.
+  fact contracts and parses those models plus the Phase 4B.3 active-publication resolver and
+  integrity gate with a non-secret CI profile.
 - `uv run --locked claimsflow generate --service-month 2026-07 --claims 1000 --seed 20260815 --output data/generated/demo-2026-07`
   creates a bounded, repeatable fictional delivery without overwriting existing paths.
 - `uv run --locked claimsflow ingest --manifest data/generated/demo-2026-07/manifest.json --workspace data/local-ingestion`
@@ -73,6 +74,10 @@ fixtures, logs, screenshots, Terraform variables, or issue/PR text.
   deterministic keys, effective-dated history, candidate isolation, and fail-closed tests.
 - [dbt curated facts](dbt-curated-facts.md) documents the five facts, parent and effective
   relationships, date roles, exact source reconciliation, and financial-integrity gates.
+- [Safe publication and rollback](safe-publication.md) documents immutable manifests, complete
+  key/hash inventories, exact changed-key deltas, trusted result-version evidence, serialized
+  reservations, gate evaluation, compare-and-swap activation, compaction,
+  active-membership resolution, and pointer-only rollback.
 - `make airflow-up` builds and starts digest-pinned Airflow 3.3.1 at
   `http://127.0.0.1:8080`; the standalone process prints temporary local credentials.
 - `make airflow-down` stops the local Airflow service.
@@ -80,8 +85,8 @@ fixtures, logs, screenshots, Terraform variables, or issue/PR text.
 
 The Airflow DAG uses empty operators in this milestone. It proves orchestration order and
 failure policy but does not yet call the implemented cloud adapters, transform, publish,
-refresh, or alert. dbt contains validated staging, curated dimensions, and curated facts;
-membership publication, metrics, and priority logic remain disabled. Terraform validation reads provider schemas but does not
+refresh, or alert. dbt contains validated staging, curated dimensions, curated facts, and the
+active-membership resolver; semantic metrics and priority logic remain disabled. Terraform validation reads provider schemas but does not
 create resources.
 
 CI loads the DAG through Airflow's `DagBag` and verifies the exact effective task graph,

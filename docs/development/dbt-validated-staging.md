@@ -12,15 +12,17 @@ Every invocation supplies:
 
 - `claimsflow_publication_id`: a unique lowercase BigQuery-safe identifier, 3–48 characters.
 - `claimsflow_validation_ids`: a non-empty allowlist of immutable Phase 3 validation IDs.
+- `claimsflow_code_commit`: the exact lowercase 40-character Git commit for the clean build.
 
-The publication ID and a deterministic fingerprint of the sorted validation allowlist become
-part of every physical staging relation name. For example, model `stg_claims` under
-publication `cfp_20260820_001` resolves to
-`stg_claims__cfp_20260820_001__<selection-fingerprint>`. Reusing the publication ID with a
-different input set therefore creates a different candidate instead of replacing the first
-one. Failed or concurrent candidates remain isolated. The shared CI defaults are accepted
-only for offline parsing; any non-CI run that does not replace the default publication ID
-fails compilation.
+The publication ID, deterministic fingerprint of the sorted validation allowlist, and a
+second build fingerprint bound to the exact Git commit become part of every physical staging
+relation name. For example, model `stg_claims` under publication `cfp_20260820_001` resolves
+to `stg_claims__cfp_20260820_001__<selection-fingerprint>__<build-fingerprint>`. Reusing the
+publication ID with either different inputs or different code therefore creates an isolated
+candidate instead of replacing a table reachable from the active manifest. An identical
+rerun binds to the same immutable inputs and code. Failed or concurrent candidates remain
+isolated. The shared CI placeholders are accepted only for offline parsing; a non-CI run that
+does not replace both the publication ID and code commit fails compilation.
 
 The project-protected `stg_validated_records` model joins the allowlisted record envelopes to matching
 quality-run evidence and requires all of the following:
@@ -90,7 +92,7 @@ uv run --locked --group dbt dbt build \
   --profiles-dir config/dbt \
   --target dev_demo \
   --select tag:validated_staging \
-  --vars '{"claimsflow_publication_id":"cfp_20260820_001","claimsflow_validation_ids":["quality-example"]}'
+  --vars '{"claimsflow_publication_id":"cfp_20260820_001","claimsflow_validation_ids":["quality-example"],"claimsflow_code_commit":"<40-character-lowercase-git-commit>"}'
 ```
 
 Do not run that command until the validated/audit interfaces exist in an isolated synthetic

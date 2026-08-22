@@ -43,6 +43,8 @@ REQUIRED_FILES = %w[
   analytics/dbt/models/curated/facts/fact_claim_line.sql
   analytics/dbt/models/curated/facts/fact_denial.sql
   analytics/dbt/models/curated/facts/fact_payment.sql
+  analytics/dbt/models/publication/_publication.yml
+  analytics/dbt/models/publication/active_publication_membership.sql
   analytics/dbt/models/semantic/README.md
   analytics/dbt/models/operational/README.md
   analytics/dbt/tests/staging_publication_scope.sql
@@ -63,16 +65,20 @@ REQUIRED_FILES = %w[
   analytics/dbt/tests/curated_fact_parent_relationships.sql
   analytics/dbt/tests/curated_fact_publication_scope.sql
   analytics/dbt/tests/curated_fact_source_reconciliation.sql
+  analytics/dbt/tests/publication_active_membership_integrity.sql
   compose.yaml
   config/dbt/profiles.yml
   config/data-quality-policy.yml
   config/release-manifest.example.json
   config/release-manifest.schema.json
+  config/publication-manifest.example.json
+  config/publication-manifest.schema.json
   docs/development/README.md
   docs/development/data-quality-quarantine.md
   docs/development/dbt-validated-staging.md
   docs/development/dbt-curated-dimensions.md
   docs/development/dbt-curated-facts.md
+  docs/development/safe-publication.md
   docs/development/component-inventory.md
   infra/terraform/environments/dev-demo/README.md
   infra/terraform/environments/dev-demo/.terraform.lock.hcl
@@ -96,6 +102,12 @@ REQUIRED_FILES = %w[
   scripts/render_dbt_curated_fact_properties.py
   src/claimsflow/cli.py
   src/claimsflow/config.py
+  src/claimsflow/adapters/bigquery_publication.py
+  src/claimsflow/adapters/in_memory_publication.py
+  src/claimsflow/domain/publication.py
+  src/claimsflow/ports/publication.py
+  src/claimsflow/publication/__init__.py
+  src/claimsflow/publication/service.py
   src/claimsflow/domain/quality.py
   src/claimsflow/logging_config.py
   src/claimsflow/quality/__init__.py
@@ -107,6 +119,11 @@ REQUIRED_FILES = %w[
   tests/unit/test_dbt_staging_contract.py
   tests/unit/test_dbt_curated_dimension_contract.py
   tests/unit/test_dbt_curated_fact_contract.py
+  tests/unit/test_dbt_publication_contract.py
+  tests/unit/test_bigquery_publication_adapter.py
+  tests/unit/test_publication_manifest.py
+  tests/unit/test_publication_service.py
+  tests/integration/test_bigquery_publication_concurrency.py
   tests/unit/test_logging_config.py
   tests/unit/test_quality_engine.py
   tests/unit/test_quality_service.py
@@ -149,6 +166,9 @@ CURATED_FACT_MODELS = %w[
   fact_claim_line
   fact_denial
   fact_payment
+].freeze
+PUBLICATION_MODELS = %w[
+  active_publication_membership
 ].freeze
 DATASET_LAYERS = %w[raw validated quarantine curated semantic operational audit].freeze
 WORKLOAD_ACCOUNTS = %w[ingestion transformation orchestration bi auditor deployment].freeze
@@ -334,6 +354,12 @@ DBT_LAYERS.each do |layer|
 end
 require_text(dbt_project, "claimsflow_publication_id: ci_phase4a", "dbt_project.yml", errors)
 require_text(dbt_project, "claimsflow_validation_ids: [ci_validation_phase4a]", "dbt_project.yml", errors)
+require_text(
+  dbt_project,
+  'claimsflow_code_commit: "0000000000000000000000000000000000000000"',
+  "dbt_project.yml",
+  errors
+)
 require_text(dbt_project, "+tags: [validated_staging, phase4a]", "dbt_project.yml", errors)
 require_text(dbt_project, "publication_scoped: true", "dbt_project.yml", errors)
 require_text(dbt_project, "+tags: [curated_dimensions, phase4b1]", "dbt_project.yml", errors)
@@ -343,6 +369,7 @@ require_text(dbt_project, "owner: ClaimsFlow Analytics Engineering", "dbt_projec
 dbt_readme = read_file("analytics/dbt/README.md", errors)
 require_text(dbt_readme, "Phase 4A implements the validated staging boundary", "dbt README", errors)
 require_text(dbt_readme, "validation-selection fingerprint", "dbt README", errors)
+require_text(dbt_readme, "exact `claimsflow_code_commit`", "dbt README", errors)
 require_text(dbt_readme, "Phase 4B.1", "dbt README", errors)
 require_text(dbt_readme, "effective-dated", "dbt README", errors)
 require_text(dbt_readme, "Phase 4B.2", "dbt README", errors)
@@ -359,11 +386,19 @@ end
 expected_curated_fact_models = CURATED_FACT_MODELS.map do |model|
   File.join(ROOT, "analytics/dbt/models/curated/facts/#{model}.sql")
 end
-expected_sql_models = (expected_staging_models + expected_curated_models + expected_curated_fact_models).sort
+expected_publication_models = PUBLICATION_MODELS.map do |model|
+  File.join(ROOT, "analytics/dbt/models/publication/#{model}.sql")
+end
+expected_sql_models = (
+  expected_staging_models +
+  expected_curated_models +
+  expected_curated_fact_models +
+  expected_publication_models
+).sort
 unless sql_models.sort == expected_sql_models
   missing = expected_sql_models - sql_models
   unexpected = sql_models - expected_sql_models
-  errors << "dbt governed model inventory must contain only Phase 4A staging and Phase 4B curated models: " \
+  errors << "dbt governed model inventory must contain only approved Phase 4A and Phase 4B models: " \
             "missing=#{missing.map { |path| relative(path) }.sort} " \
             "unexpected=#{unexpected.map { |path| relative(path) }.sort}"
 end
@@ -398,7 +433,10 @@ publication_scope = read_file("analytics/dbt/macros/publication_scope.sql", erro
   "non-empty list of immutable quality validation IDs" => "validation allowlist",
   "modules.re.fullmatch" => "safe identifier validation",
   "unique_ids | sort" => "deterministic validation allowlist",
-  "local_md5(canonical_selection)" => "deterministic candidate-selection fingerprint"
+  "local_md5(canonical_selection)" => "deterministic candidate-selection fingerprint",
+  "claimsflow_code_commit" => "exact code-commit binding",
+  "non-placeholder claimsflow_code_commit" => "non-CI code-commit override",
+  "local_md5(canonical_build)" => "deterministic candidate-build fingerprint"
 }.each do |text, label|
   errors << "dbt publication-scope macro must declare #{label}" unless publication_scope.include?(text)
 end
@@ -415,6 +453,12 @@ require_text(
   alias_macro,
   "claimsflow_publication_selection_fingerprint()",
   "dbt validation-bound physical aliases",
+  errors
+)
+require_text(
+  alias_macro,
+  "claimsflow_candidate_build_fingerprint()",
+  "dbt code-bound physical aliases",
   errors
 )
 
@@ -1118,7 +1162,9 @@ dbt_staging_docs = read_file("docs/development/dbt-validated-staging.md", errors
 {
   "claimsflow_publication_id" => "candidate publication identifier",
   "claimsflow_validation_ids" => "immutable validation allowlist",
+  "claimsflow_code_commit" => "exact code commit",
   "selection-fingerprint" => "candidate isolation",
+  "build-fingerprint" => "immutable build isolation",
   "validated_record_set_sha256" => "cryptographic record-set binding",
   "fourteen typed models" => "complete staging identity inventory",
   "accepted plus warned" => "quality count reconciliation",
@@ -1152,6 +1198,42 @@ dbt_curated_fact_docs = read_file("docs/development/dbt-curated-facts.md", error
   "Phase 4B.3" => "next milestone boundary"
 }.each do |text, label|
   errors << "dbt curated-fact guide must declare #{label}" unless dbt_curated_fact_docs.include?(text)
+end
+
+safe_publication_docs = read_file("docs/development/safe-publication.md", errors)
+{
+  "complete business-key/content-hash inventory" => "complete candidate inventory",
+  "publication_reservation_locks" => "serialized publication reservation",
+  "preseeded" => "preseeded active-pointer control rows",
+  "code-bound build fingerprint" => "immutable physical build alias",
+  "synthetic GCP concurrency exercise" => "explicit live concurrency gate"
+}.each do |text, label|
+  errors << "safe-publication guide must declare #{label}" unless safe_publication_docs.include?(text)
+end
+
+publication_service = read_file("src/claimsflow/publication/service.py", errors)
+require_text(
+  publication_service,
+  "membership delta must exactly represent every inventory addition, update,",
+  "publication service complete-inventory diff",
+  errors
+)
+require_text(
+  publication_service,
+  "may not reuse untrusted candidate result versions",
+  "publication service failed-candidate isolation",
+  errors
+)
+
+publication_adapter = read_file("src/claimsflow/adapters/bigquery_publication.py", errors)
+{
+  "publication_candidate_inventory" => "persisted candidate inventory",
+  "publication_reservation_locks" => "serialized publication-ID reservation",
+  "ASSERT @@row_count = 1" => "row-updated compare-and-swap proof",
+  "IS DISTINCT FROM 'passed'" => "fail-closed gate status",
+  "membership does not exactly match its complete inventory" => "independent inventory gate"
+}.each do |text, label|
+  errors << "BigQuery publication adapter must declare #{label}" unless publication_adapter.include?(text)
 end
 
 quality_docs = read_file("docs/development/data-quality-quarantine.md", errors)
