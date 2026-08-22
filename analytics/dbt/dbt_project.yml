@@ -37,6 +37,12 @@ models:
       +schema: intermediate
     curated:
       +schema: curated
+      dimensions:
+        +materialized: table
+        +tags: [curated_dimensions, phase4b1]
+        +meta:
+          owner: ClaimsFlow Analytics Engineering
+          publication_scoped: true
     semantic:
       +materialized: view
       +schema: semantic

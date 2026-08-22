@@ -1,0 +1,15 @@
+{{
+  claimsflow_effective_dimension(
+    entity_name='payer',
+    source_model='stg_reference_payers',
+    business_keys=['payer_id'],
+    attributes=[
+      'payer_name',
+      'payer_type',
+      'timely_filing_days',
+      'appeal_window_days',
+      'expected_response_days',
+      'historical_resolution_rate'
+    ]
+  )
+}}

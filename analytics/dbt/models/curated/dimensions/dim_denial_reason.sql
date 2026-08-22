@@ -1,0 +1,14 @@
+{{
+  claimsflow_effective_dimension(
+    entity_name='denial_reason',
+    source_model='stg_reference_denial_reasons',
+    business_keys=['denial_reason_code'],
+    attributes=[
+      'denial_category',
+      'denial_reason_description',
+      'preventable_default_flag',
+      'required_document_codes',
+      'historical_resolution_rate'
+    ]
+  )
+}}

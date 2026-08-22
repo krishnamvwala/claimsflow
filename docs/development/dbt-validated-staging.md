@@ -116,6 +116,7 @@ dbt tests prove:
 
 ## Next milestone
 
-Phase 4B will build publication-isolated curated dimensions and facts plus membership deltas.
+Phase 4B.1 now builds publication-isolated curated dimensions. Phase 4B.2 will add curated
+facts, followed by candidate membership deltas in Phase 4B.3.
 It must preserve this boundary and cannot advance an active publication until its own grain,
 relationship, history, and reconciliation tests pass.

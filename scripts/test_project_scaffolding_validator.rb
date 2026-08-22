@@ -156,12 +156,40 @@ results << assert_failure("dbt physical schema drift", "dbt dev/demo schema mapp
   end
 end
 
-results << assert_failure("unexpected curated model", "dbt Phase 4A model inventory must contain only validated staging SQL") do |root|
+results << assert_failure("unexpected curated model", "dbt governed model inventory must contain only") do |root|
   File.write(File.join(root, "analytics/dbt/models/curated/claim.sql"), "select 1 as claim_id\n")
 end
 
-results << assert_failure("missing typed staging model", "dbt Phase 4A model inventory must contain only validated staging SQL") do |root|
+results << assert_failure("missing typed staging model", "dbt governed model inventory must contain only") do |root|
   FileUtils.rm(File.join(root, "analytics/dbt/models/staging/stg_claims.sql"))
+end
+
+results << assert_failure("missing curated dimension", "dbt governed model inventory must contain only") do |root|
+  FileUtils.rm(File.join(root, "analytics/dbt/models/curated/dimensions/dim_payer.sql"))
+end
+
+results << assert_failure("curated raw boundary bypass", "dbt dim_provider validated boundary must not contain") do |root|
+  mutate(root, "analytics/dbt/models/curated/dimensions/dim_provider.sql") do |text|
+    text + "\n-- source('claimsflow_raw', 'providers')\n"
+  end
+end
+
+results << assert_failure("curated contract drift", "documented publication-scoped contracts") do |root|
+  mutate(root, "analytics/dbt/models/curated/dimensions/_dimensions.yml") do |text|
+    text.sub("owner: ClaimsFlow Analytics Engineering", "owner: Unknown")
+  end
+end
+
+results << assert_failure("curated date-span selector drift", "dbt curated date-span selector") do |root|
+  mutate(root, "analytics/dbt/tests/curated_date_span_bound.sql") do |text|
+    text.sub("{{ config(tags=['curated_dimensions', 'phase4b1']) }}\n\n", "")
+  end
+end
+
+results << assert_failure("curated docs target drift", "configured dev/demo target") do |root|
+  mutate(root, "docs/development/dbt-curated-dimensions.md") do |text|
+    text.sub("--target dev_demo", "--target dev-demo")
+  end
 end
 
 results << assert_failure("dbt validated boundary bypass", "dbt staging macro must declare validated-only model dependency") do |root|
