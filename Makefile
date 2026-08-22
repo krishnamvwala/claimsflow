@@ -29,6 +29,7 @@ check-python:
 dbt-parse:
 	uv run --locked python scripts/render_dbt_staging_properties.py --check
 	uv run --locked python scripts/render_dbt_curated_dimension_properties.py --check
+	uv run --locked python scripts/render_dbt_curated_fact_properties.py --check
 	uv run --locked --group dbt dbt parse --project-dir analytics/dbt --profiles-dir config/dbt --target ci --no-partial-parse
 
 airflow-up:

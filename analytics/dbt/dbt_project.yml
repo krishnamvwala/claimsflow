@@ -43,6 +43,12 @@ models:
         +meta:
           owner: ClaimsFlow Analytics Engineering
           publication_scoped: true
+      facts:
+        +materialized: table
+        +tags: [curated_facts, phase4b2]
+        +meta:
+          owner: ClaimsFlow Analytics Engineering
+          publication_scoped: true
     semantic:
       +materialized: view
       +schema: semantic

@@ -20,6 +20,7 @@ REQUIRED_FILES = %w[
   analytics/dbt/macros/publication_scope.sql
   analytics/dbt/macros/stage_validated.sql
   analytics/dbt/macros/curated_dimensions.sql
+  analytics/dbt/macros/curated_facts.sql
   analytics/dbt/models/staging/_sources.yml
   analytics/dbt/models/staging/_staging.yml
   analytics/dbt/models/staging/README.md
@@ -36,6 +37,12 @@ REQUIRED_FILES = %w[
   analytics/dbt/models/curated/dimensions/dim_plan.sql
   analytics/dbt/models/curated/dimensions/dim_procedure.sql
   analytics/dbt/models/curated/dimensions/dim_provider.sql
+  analytics/dbt/models/curated/facts/_facts.yml
+  analytics/dbt/models/curated/facts/fact_appeal.sql
+  analytics/dbt/models/curated/facts/fact_claim.sql
+  analytics/dbt/models/curated/facts/fact_claim_line.sql
+  analytics/dbt/models/curated/facts/fact_denial.sql
+  analytics/dbt/models/curated/facts/fact_payment.sql
   analytics/dbt/models/semantic/README.md
   analytics/dbt/models/operational/README.md
   analytics/dbt/tests/staging_publication_scope.sql
@@ -49,6 +56,13 @@ REQUIRED_FILES = %w[
   analytics/dbt/tests/curated_dimension_publication_scope.sql
   analytics/dbt/tests/curated_dimension_reconciliation.sql
   analytics/dbt/tests/curated_plan_payer_effective_relationship.sql
+  analytics/dbt/tests/curated_fact_date_keys.sql
+  analytics/dbt/tests/curated_fact_effective_dimension_relationships.sql
+  analytics/dbt/tests/curated_fact_financial_integrity.sql
+  analytics/dbt/tests/curated_fact_line_diagnosis_relationships.sql
+  analytics/dbt/tests/curated_fact_parent_relationships.sql
+  analytics/dbt/tests/curated_fact_publication_scope.sql
+  analytics/dbt/tests/curated_fact_source_reconciliation.sql
   compose.yaml
   config/dbt/profiles.yml
   config/data-quality-policy.yml
@@ -58,6 +72,7 @@ REQUIRED_FILES = %w[
   docs/development/data-quality-quarantine.md
   docs/development/dbt-validated-staging.md
   docs/development/dbt-curated-dimensions.md
+  docs/development/dbt-curated-facts.md
   docs/development/component-inventory.md
   infra/terraform/environments/dev-demo/README.md
   infra/terraform/environments/dev-demo/.terraform.lock.hcl
@@ -78,6 +93,7 @@ REQUIRED_FILES = %w[
   pyproject.toml
   scripts/render_dbt_staging_properties.py
   scripts/render_dbt_curated_dimension_properties.py
+  scripts/render_dbt_curated_fact_properties.py
   src/claimsflow/cli.py
   src/claimsflow/config.py
   src/claimsflow/domain/quality.py
@@ -90,6 +106,7 @@ REQUIRED_FILES = %w[
   tests/unit/test_config.py
   tests/unit/test_dbt_staging_contract.py
   tests/unit/test_dbt_curated_dimension_contract.py
+  tests/unit/test_dbt_curated_fact_contract.py
   tests/unit/test_logging_config.py
   tests/unit/test_quality_engine.py
   tests/unit/test_quality_service.py
@@ -125,6 +142,13 @@ CURATED_DIMENSION_MODELS = %w[
   dim_plan
   dim_procedure
   dim_provider
+].freeze
+CURATED_FACT_MODELS = %w[
+  fact_appeal
+  fact_claim
+  fact_claim_line
+  fact_denial
+  fact_payment
 ].freeze
 DATASET_LAYERS = %w[raw validated quarantine curated semantic operational audit].freeze
 WORKLOAD_ACCOUNTS = %w[ingestion transformation orchestration bi auditor deployment].freeze
@@ -174,6 +198,7 @@ CI_PATHS = %w[
   pyproject.toml
   scripts/render_dbt_staging_properties.py
   scripts/render_dbt_curated_dimension_properties.py
+  scripts/render_dbt_curated_fact_properties.py
   src/**
   tests/**
   uv.lock
@@ -312,6 +337,7 @@ require_text(dbt_project, "claimsflow_validation_ids: [ci_validation_phase4a]", 
 require_text(dbt_project, "+tags: [validated_staging, phase4a]", "dbt_project.yml", errors)
 require_text(dbt_project, "publication_scoped: true", "dbt_project.yml", errors)
 require_text(dbt_project, "+tags: [curated_dimensions, phase4b1]", "dbt_project.yml", errors)
+require_text(dbt_project, "+tags: [curated_facts, phase4b2]", "dbt_project.yml", errors)
 require_text(dbt_project, "owner: ClaimsFlow Analytics Engineering", "dbt_project.yml", errors)
 
 dbt_readme = read_file("analytics/dbt/README.md", errors)
@@ -319,6 +345,8 @@ require_text(dbt_readme, "Phase 4A implements the validated staging boundary", "
 require_text(dbt_readme, "validation-selection fingerprint", "dbt README", errors)
 require_text(dbt_readme, "Phase 4B.1", "dbt README", errors)
 require_text(dbt_readme, "effective-dated", "dbt README", errors)
+require_text(dbt_readme, "Phase 4B.2", "dbt README", errors)
+require_text(dbt_readme, "five publication-isolated curated facts", "dbt README", errors)
 reject_text(dbt_project, "raw_source", "dbt_project.yml", errors)
 
 sql_models = Dir.glob(File.join(ROOT, "analytics/dbt/models/**/*.sql"))
@@ -328,11 +356,14 @@ end
 expected_curated_models = CURATED_DIMENSION_MODELS.map do |model|
   File.join(ROOT, "analytics/dbt/models/curated/dimensions/#{model}.sql")
 end
-expected_sql_models = (expected_staging_models + expected_curated_models).sort
+expected_curated_fact_models = CURATED_FACT_MODELS.map do |model|
+  File.join(ROOT, "analytics/dbt/models/curated/facts/#{model}.sql")
+end
+expected_sql_models = (expected_staging_models + expected_curated_models + expected_curated_fact_models).sort
 unless sql_models.sort == expected_sql_models
   missing = expected_sql_models - sql_models
   unexpected = sql_models - expected_sql_models
-  errors << "dbt governed model inventory must contain only Phase 4A staging and Phase 4B.1 dimensions: " \
+  errors << "dbt governed model inventory must contain only Phase 4A staging and Phase 4B curated models: " \
             "missing=#{missing.map { |path| relative(path) }.sort} " \
             "unexpected=#{unexpected.map { |path| relative(path) }.sort}"
 end
@@ -486,6 +517,20 @@ require_text(
   "dbt required-validation evidence test",
   errors
 )
+%w[
+  staging_publication_scope.sql
+  staging_reconciles_to_quality_counts.sql
+  staging_reconciles_to_typed_models.sql
+  staging_reconciles_to_validated_record_set.sql
+  staging_requires_every_validation.sql
+].each do |filename|
+  require_text(
+    read_file("analytics/dbt/tests/#{filename}", errors),
+    "config(tags=['validated_staging', 'phase4a'])",
+    "dbt validated-staging full-candidate selector",
+    errors
+  )
+end
 
 properties_generator = read_file("scripts/render_dbt_staging_properties.py", errors)
 require_text(properties_generator, 'parser.add_argument("--check"', "dbt properties generator", errors)
@@ -611,6 +656,21 @@ require_text(curated_date_test, "claimsflow_candidate_dates", "dbt date coverage
 require_text(curated_date_test, "except distinct", "dbt date coverage", errors)
 curated_date_span_test = read_file("analytics/dbt/tests/curated_date_span_bound.sql", errors)
 require_text(curated_date_span_test, "date_spine_days", "dbt bounded date spine", errors)
+%w[
+  curated_date_coverage.sql
+  curated_date_span_bound.sql
+  curated_dimension_history_integrity.sql
+  curated_dimension_publication_scope.sql
+  curated_dimension_reconciliation.sql
+  curated_plan_payer_effective_relationship.sql
+].each do |filename|
+  require_text(
+    read_file("analytics/dbt/tests/#{filename}", errors),
+    "config(tags=['curated_dimensions', 'phase4b1'])",
+    "dbt curated-dimension full-candidate selector",
+    errors
+  )
+end
 require_text(
   curated_date_span_test,
   "config(tags=['curated_dimensions', 'phase4b1'])",
@@ -621,6 +681,154 @@ require_text(
   curated_date_span_test,
   "claimsflow_max_date_spine_days",
   "dbt bounded date spine",
+  errors
+)
+
+curated_fact_macro = read_file("analytics/dbt/macros/curated_facts.sql", errors)
+{
+  "claimsflow_fact_key" => "deterministic fact-key helper",
+  "claimsflow_dimension_key" => "shared structured SHA-256 serialization",
+  "claimsflow_date_dimension_id" => "deterministic date-key helper",
+  "format_date('%Y%m%d'" => "YYYYMMDD date-key convention",
+  "cast(null as int64)" => "nullable date-role behavior"
+}.each do |text, label|
+  errors << "dbt curated fact macro must declare #{label}" unless curated_fact_macro.include?(text)
+end
+
+CURATED_FACT_MODELS.each do |model|
+  model_sql = read_file("analytics/dbt/models/curated/facts/#{model}.sql", errors)
+  require_text(model_sql, "claimsflow_fact_key", "dbt #{model}", errors)
+  require_text(model_sql, "partition_by", "dbt #{model} partition policy", errors)
+  reject_text(model_sql, "source(", "dbt #{model} validated boundary", errors)
+  reject_text(model_sql, "quarantine", "dbt #{model} validated boundary", errors)
+end
+require_text(
+  read_file("analytics/dbt/models/curated/facts/fact_claim_line.sql", errors),
+  "diagnosis_resolutions",
+  "dbt ordered line-diagnosis conformance",
+  errors
+)
+require_text(
+  read_file("analytics/dbt/models/curated/facts/fact_payment.sql", errors),
+  "signed_amount",
+  "dbt governed payment sign",
+  errors
+)
+require_text(
+  read_file("analytics/dbt/models/curated/facts/fact_payment.sql", errors),
+  "remittance_source_validated_record_id",
+  "dbt resolved payment remittance",
+  errors
+)
+
+begin
+  curated_fact_properties = YAML.safe_load(
+    read_file("analytics/dbt/models/curated/facts/_facts.yml", errors)
+  )
+  curated_fact_property_models = curated_fact_properties.fetch("models", [])
+  curated_fact_property_names = curated_fact_property_models.map { |model| model.fetch("name") }
+  unless curated_fact_property_names.sort == CURATED_FACT_MODELS.sort
+    errors << "dbt Phase 4B.2 properties must document exactly five curated facts"
+  end
+  curated_fact_property_models.each do |model|
+    metadata = model.dig("config", "meta")
+    unless model.dig("config", "access") == "protected" &&
+           model.dig("config", "contract", "enforced") == true &&
+           metadata.is_a?(Hash) && metadata["owner"] == "ClaimsFlow Analytics Engineering" &&
+           metadata["materialization"] == "table" && metadata["publication_scoped"] == true &&
+           metadata["grain"].is_a?(String) && metadata["purpose"].is_a?(String) &&
+           metadata["partition_by"].is_a?(String) && metadata["cluster_by"].is_a?(Array) &&
+           metadata["source_models"].is_a?(Array) && metadata["financial_fields"].is_a?(Array) &&
+           model.fetch("columns", []).all? do |column|
+             column["name"].is_a?(String) && column["data_type"].is_a?(String) &&
+               column["description"].is_a?(String) && !column["description"].empty?
+           end
+      errors << "dbt Phase 4B.2 model properties must enforce documented publication-scoped contracts"
+    end
+  end
+rescue Psych::SyntaxError, KeyError, NoMethodError => e
+  errors << "dbt Phase 4B.2 properties must be valid governed YAML: #{e.message}"
+end
+
+curated_fact_properties_generator = read_file(
+  "scripts/render_dbt_curated_fact_properties.py",
+  errors
+)
+require_text(
+  curated_fact_properties_generator,
+  'parser.add_argument("--check"',
+  "dbt curated fact properties generator",
+  errors
+)
+require_text(
+  curated_fact_properties_generator,
+  "FACT_SPECS",
+  "dbt curated fact properties generator",
+  errors
+)
+
+curated_fact_tests = {
+  "publication scope" => "curated_fact_publication_scope.sql",
+  "source reconciliation" => "curated_fact_source_reconciliation.sql",
+  "parent relationships" => "curated_fact_parent_relationships.sql",
+  "effective dimensions" => "curated_fact_effective_dimension_relationships.sql",
+  "date keys" => "curated_fact_date_keys.sql",
+  "line diagnoses" => "curated_fact_line_diagnosis_relationships.sql",
+  "financial integrity" => "curated_fact_financial_integrity.sql"
+}
+curated_fact_test_text = curated_fact_tests.to_h do |label, filename|
+  text = read_file("analytics/dbt/tests/#{filename}", errors)
+  require_text(
+    text,
+    "config(tags=['curated_facts', 'phase4b2'])",
+    "dbt curated fact #{label} selector",
+    errors
+  )
+  [label, text]
+end
+CURATED_FACT_MODELS.each do |model|
+  require_text(
+    curated_fact_test_text["publication scope"],
+    "'#{model}'",
+    "dbt curated fact publication scope",
+    errors
+  )
+  require_text(
+    curated_fact_test_text["source reconciliation"],
+    "'#{model}'",
+    "dbt curated fact source reconciliation",
+    errors
+  )
+end
+{
+  "original_claim" => "parent claim lineage",
+  "reversed_payment" => "payment reversal lineage",
+  "remittance_source_validated_record_id" => "payment remittance lineage"
+}.each do |text, label|
+  require_text(curated_fact_test_text["parent relationships"], text, label, errors)
+end
+require_text(
+  curated_fact_test_text["effective dimensions"],
+  "dimension.valid_to",
+  "dbt fact effective-date relationship",
+  errors
+)
+require_text(
+  curated_fact_test_text["line diagnoses"],
+  "safe_offset(diagnosis_offset)",
+  "dbt ordered diagnosis relationship",
+  errors
+)
+require_text(
+  curated_fact_test_text["financial integrity"],
+  "denial_total_recovery",
+  "dbt fact financial recovery control",
+  errors
+)
+require_text(
+  curated_fact_test_text["financial integrity"],
+  "remittance_control",
+  "dbt fact remittance financial control",
   errors
 )
 
@@ -874,6 +1082,7 @@ CI_PATHS.each { |path| require_text(workflow, %(      - "#{path}"), "foundation 
   "pytest" => "Python unit tests",
   "python scripts/render_dbt_staging_properties.py --check" => "generated dbt staging properties",
   "python scripts/render_dbt_curated_dimension_properties.py --check" => "generated dbt curated dimension properties",
+  "python scripts/render_dbt_curated_fact_properties.py --check" => "generated dbt curated fact properties",
   "dbt parse" => "dbt parse",
   "docker compose config --quiet" => "Compose validation",
   "docker compose build airflow" => "Airflow image build",
@@ -903,6 +1112,7 @@ require_text(development_docs, "terraform apply", "development guide", errors)
 require_text(development_docs, "claimsflow validate", "development guide", errors)
 require_text(development_docs, "dbt validated staging", "development guide", errors)
 require_text(development_docs, "dbt curated dimensions", "development guide", errors)
+require_text(development_docs, "dbt curated facts", "development guide", errors)
 
 dbt_staging_docs = read_file("docs/development/dbt-validated-staging.md", errors)
 {
@@ -931,6 +1141,19 @@ dbt_curated_docs = read_file("docs/development/dbt-curated-dimensions.md", error
   errors << "dbt curated-dimension guide must declare #{label}" unless dbt_curated_docs.include?(text)
 end
 
+dbt_curated_fact_docs = read_file("docs/development/dbt-curated-facts.md", errors)
+{
+  "Phase 4B.2" => "curated-fact milestone",
+  "five curated facts" => "complete fact inventory",
+  "deterministic SHA-256" => "deterministic fact keys",
+  "effective" => "effective-dated dimension relationships",
+  "zero USD tolerance" => "exact financial reconciliation",
+  "--select tag:validated_staging tag:curated_dimensions tag:curated_facts" => "complete release selector",
+  "Phase 4B.3" => "next milestone boundary"
+}.each do |text, label|
+  errors << "dbt curated-fact guide must declare #{label}" unless dbt_curated_fact_docs.include?(text)
+end
+
 quality_docs = read_file("docs/development/data-quality-quarantine.md", errors)
 %w[accepted accepted_with_warning quarantined rejected duplicate_no_op].each do |disposition|
   require_text(quality_docs, disposition, "data-quality guide", errors)
@@ -954,9 +1177,12 @@ inventory = read_file("docs/development/component-inventory.md", errors)
   require_text(inventory, component, "component inventory", errors)
 end
 require_text(inventory, "Deferred", "component inventory", errors)
+require_text(inventory, "Phase 4B.2", "component inventory", errors)
+require_text(inventory, "Phase 4B.3", "component inventory", errors)
 
 readme = read_file("README.md", errors)
 require_text(readme, "Phase 1", "README", errors)
+require_text(readme, "Phase 4B.2", "README", errors)
 require_text(readme, "docs/development/README.md", "README", errors)
 
 new_roots = %w[

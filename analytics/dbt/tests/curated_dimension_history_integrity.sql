@@ -35,3 +35,4 @@ with history_failures as (
 )
 
 select * from history_failures
+{{ config(tags=['curated_dimensions', 'phase4b1']) }}

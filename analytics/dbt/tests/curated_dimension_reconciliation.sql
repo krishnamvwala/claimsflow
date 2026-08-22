@@ -44,3 +44,4 @@ select
 from expected_counts
 full outer join actual_counts using (model_name)
 where expected_counts.expected_row_count is distinct from actual_counts.actual_row_count
+{{ config(tags=['curated_dimensions', 'phase4b1']) }}

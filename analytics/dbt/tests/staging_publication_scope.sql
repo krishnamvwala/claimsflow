@@ -15,3 +15,4 @@ where candidate_publication_id != '{{ claimsflow_publication_id() }}'
   )
   or synthetic_only is not true
   or disposition not in ('accepted', 'accepted_with_warning')
+{{ config(tags=['validated_staging', 'phase4a']) }}
