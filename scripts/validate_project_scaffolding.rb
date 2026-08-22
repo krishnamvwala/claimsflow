@@ -19,12 +19,23 @@ REQUIRED_FILES = %w[
   analytics/dbt/macros/generate_schema_name.sql
   analytics/dbt/macros/publication_scope.sql
   analytics/dbt/macros/stage_validated.sql
+  analytics/dbt/macros/curated_dimensions.sql
   analytics/dbt/models/staging/_sources.yml
   analytics/dbt/models/staging/_staging.yml
   analytics/dbt/models/staging/README.md
   analytics/dbt/models/staging/stg_validated_records.sql
   analytics/dbt/models/intermediate/README.md
   analytics/dbt/models/curated/README.md
+  analytics/dbt/models/curated/dimensions/_dimensions.yml
+  analytics/dbt/models/curated/dimensions/dim_date.sql
+  analytics/dbt/models/curated/dimensions/dim_denial_reason.sql
+  analytics/dbt/models/curated/dimensions/dim_diagnosis.sql
+  analytics/dbt/models/curated/dimensions/dim_facility.sql
+  analytics/dbt/models/curated/dimensions/dim_patient.sql
+  analytics/dbt/models/curated/dimensions/dim_payer.sql
+  analytics/dbt/models/curated/dimensions/dim_plan.sql
+  analytics/dbt/models/curated/dimensions/dim_procedure.sql
+  analytics/dbt/models/curated/dimensions/dim_provider.sql
   analytics/dbt/models/semantic/README.md
   analytics/dbt/models/operational/README.md
   analytics/dbt/tests/staging_publication_scope.sql
@@ -32,6 +43,12 @@ REQUIRED_FILES = %w[
   analytics/dbt/tests/staging_reconciles_to_typed_models.sql
   analytics/dbt/tests/staging_reconciles_to_validated_record_set.sql
   analytics/dbt/tests/staging_requires_every_validation.sql
+  analytics/dbt/tests/curated_date_coverage.sql
+  analytics/dbt/tests/curated_date_span_bound.sql
+  analytics/dbt/tests/curated_dimension_history_integrity.sql
+  analytics/dbt/tests/curated_dimension_publication_scope.sql
+  analytics/dbt/tests/curated_dimension_reconciliation.sql
+  analytics/dbt/tests/curated_plan_payer_effective_relationship.sql
   compose.yaml
   config/dbt/profiles.yml
   config/data-quality-policy.yml
@@ -40,6 +57,7 @@ REQUIRED_FILES = %w[
   docs/development/README.md
   docs/development/data-quality-quarantine.md
   docs/development/dbt-validated-staging.md
+  docs/development/dbt-curated-dimensions.md
   docs/development/component-inventory.md
   infra/terraform/environments/dev-demo/README.md
   infra/terraform/environments/dev-demo/.terraform.lock.hcl
@@ -59,6 +77,7 @@ REQUIRED_FILES = %w[
   orchestration/airflow/policy/validate_dag.py
   pyproject.toml
   scripts/render_dbt_staging_properties.py
+  scripts/render_dbt_curated_dimension_properties.py
   src/claimsflow/cli.py
   src/claimsflow/config.py
   src/claimsflow/domain/quality.py
@@ -70,6 +89,7 @@ REQUIRED_FILES = %w[
   tests/unit/test_cli.py
   tests/unit/test_config.py
   tests/unit/test_dbt_staging_contract.py
+  tests/unit/test_dbt_curated_dimension_contract.py
   tests/unit/test_logging_config.py
   tests/unit/test_quality_engine.py
   tests/unit/test_quality_service.py
@@ -95,6 +115,17 @@ STAGING_MODELS = {
   "reference-data.providers" => "stg_reference_providers",
   "remittances" => "stg_remittances"
 }.freeze
+CURATED_DIMENSION_MODELS = %w[
+  dim_date
+  dim_denial_reason
+  dim_diagnosis
+  dim_facility
+  dim_patient
+  dim_payer
+  dim_plan
+  dim_procedure
+  dim_provider
+].freeze
 DATASET_LAYERS = %w[raw validated quarantine curated semantic operational audit].freeze
 WORKLOAD_ACCOUNTS = %w[ingestion transformation orchestration bi auditor deployment].freeze
 DAG_TASKS = %w[
@@ -142,6 +173,7 @@ CI_PATHS = %w[
   orchestration/airflow/**
   pyproject.toml
   scripts/render_dbt_staging_properties.py
+  scripts/render_dbt_curated_dimension_properties.py
   src/**
   tests/**
   uv.lock
@@ -279,23 +311,28 @@ require_text(dbt_project, "claimsflow_publication_id: ci_phase4a", "dbt_project.
 require_text(dbt_project, "claimsflow_validation_ids: [ci_validation_phase4a]", "dbt_project.yml", errors)
 require_text(dbt_project, "+tags: [validated_staging, phase4a]", "dbt_project.yml", errors)
 require_text(dbt_project, "publication_scoped: true", "dbt_project.yml", errors)
+require_text(dbt_project, "+tags: [curated_dimensions, phase4b1]", "dbt_project.yml", errors)
+require_text(dbt_project, "owner: ClaimsFlow Analytics Engineering", "dbt_project.yml", errors)
 
 dbt_readme = read_file("analytics/dbt/README.md", errors)
 require_text(dbt_readme, "Phase 4A implements the validated staging boundary", "dbt README", errors)
 require_text(dbt_readme, "validation-selection fingerprint", "dbt README", errors)
+require_text(dbt_readme, "Phase 4B.1", "dbt README", errors)
+require_text(dbt_readme, "effective-dated", "dbt README", errors)
 reject_text(dbt_project, "raw_source", "dbt_project.yml", errors)
-if dbt_project.match?(/curated:\s*\n\s+\+materialized:\s*table/)
-  errors << "dbt Phase 4A publication boundary must prohibit curated table models"
-end
 
 sql_models = Dir.glob(File.join(ROOT, "analytics/dbt/models/**/*.sql"))
-expected_sql_models = ["stg_validated_records", *STAGING_MODELS.values].map do |model|
+expected_staging_models = ["stg_validated_records", *STAGING_MODELS.values].map do |model|
   File.join(ROOT, "analytics/dbt/models/staging/#{model}.sql")
-end.sort
+end
+expected_curated_models = CURATED_DIMENSION_MODELS.map do |model|
+  File.join(ROOT, "analytics/dbt/models/curated/dimensions/#{model}.sql")
+end
+expected_sql_models = (expected_staging_models + expected_curated_models).sort
 unless sql_models.sort == expected_sql_models
   missing = expected_sql_models - sql_models
   unexpected = sql_models - expected_sql_models
-  errors << "dbt Phase 4A model inventory must contain only validated staging SQL: " \
+  errors << "dbt governed model inventory must contain only Phase 4A staging and Phase 4B.1 dimensions: " \
             "missing=#{missing.map { |path| relative(path) }.sort} " \
             "unexpected=#{unexpected.map { |path| relative(path) }.sort}"
 end
@@ -454,6 +491,139 @@ properties_generator = read_file("scripts/render_dbt_staging_properties.py", err
 require_text(properties_generator, 'parser.add_argument("--check"', "dbt properties generator", errors)
 require_text(properties_generator, "if set(result) != set(MODEL_NAMES)", "dbt properties generator", errors)
 
+curated_macro = read_file("analytics/dbt/macros/curated_dimensions.sql", errors)
+{
+  "claimsflow_dimension_key" => "deterministic dimension-key helper",
+  "to_hex(" => "hex-encoded key output",
+  "sha256(" => "SHA-256 dimension keys",
+  "to_json_string(" => "unambiguous structured key serialization",
+  "claimsflow_effective_dimension" => "effective-dated dimension helper",
+  "ref(source_model)" => "validated staging dependency",
+  "claimsflow_candidate_dates" => "candidate date-source inventory",
+  "claimsflow_max_date_spine_days" => "bounded candidate date spine"
+}.each do |text, label|
+  errors << "dbt curated dimension macro must declare #{label}" unless curated_macro.include?(text)
+end
+
+CURATED_DIMENSION_MODELS.each do |model|
+  model_sql = read_file("analytics/dbt/models/curated/dimensions/#{model}.sql", errors)
+  reject_text(model_sql, "source(", "dbt #{model} validated boundary", errors)
+  reject_text(model_sql, "quarantine", "dbt #{model} validated boundary", errors)
+end
+%w[denial_reason diagnosis facility payer procedure provider].each do |entity|
+  require_text(
+    read_file("analytics/dbt/models/curated/dimensions/dim_#{entity}.sql", errors),
+    "claimsflow_effective_dimension",
+    "dbt dim_#{entity}",
+    errors
+  )
+end
+plan_sql = read_file("analytics/dbt/models/curated/dimensions/dim_plan.sql", errors)
+require_text(plan_sql, "ref('dim_payer')", "dbt conformed plan-to-payer relationship", errors)
+require_text(plan_sql, "date '9999-12-31'", "dbt effective plan-to-payer relationship", errors)
+patient_sql = read_file("analytics/dbt/models/curated/dimensions/dim_patient.sql", errors)
+require_text(patient_sql, "ref('stg_eligibility')", "dbt patient validated dependency", errors)
+require_text(patient_sql, "array_agg(distinct validation_id", "dbt patient lineage rollup", errors)
+date_sql = read_file("analytics/dbt/models/curated/dimensions/dim_date.sql", errors)
+require_text(date_sql, "claimsflow_candidate_dates", "dbt date candidate coverage", errors)
+require_text(date_sql, "generate_date_array", "dbt continuous date spine", errors)
+
+begin
+  curated_properties = YAML.safe_load(
+    read_file("analytics/dbt/models/curated/dimensions/_dimensions.yml", errors)
+  )
+  curated_property_models = curated_properties.fetch("models", [])
+  curated_property_names = curated_property_models.map { |model| model.fetch("name") }
+  unless curated_property_names.sort == CURATED_DIMENSION_MODELS.sort
+    errors << "dbt Phase 4B.1 properties must document exactly nine curated dimensions"
+  end
+  curated_property_models.each do |model|
+    metadata = model.dig("config", "meta")
+    unless model.dig("config", "access") == "protected" &&
+           model.dig("config", "contract", "enforced") == true &&
+           metadata.is_a?(Hash) && metadata["owner"] == "ClaimsFlow Analytics Engineering" &&
+           metadata["materialization"] == "table" &&
+           metadata["publication_scoped"] == true && metadata["grain"].is_a?(String) &&
+           metadata["purpose"].is_a?(String) && metadata["history_strategy"].is_a?(String) &&
+           metadata["source_models"].is_a?(Array) && model.fetch("columns", []).all? do |column|
+             column["name"].is_a?(String) && column["data_type"].is_a?(String) &&
+               column["description"].is_a?(String) && !column["description"].empty?
+           end
+      errors << "dbt Phase 4B.1 model properties must enforce documented publication-scoped contracts"
+    end
+  end
+rescue Psych::SyntaxError, KeyError, NoMethodError => e
+  errors << "dbt Phase 4B.1 properties must be valid governed YAML: #{e.message}"
+end
+
+curated_properties_generator = read_file(
+  "scripts/render_dbt_curated_dimension_properties.py",
+  errors
+)
+require_text(
+  curated_properties_generator,
+  'parser.add_argument("--check"',
+  "dbt curated properties generator",
+  errors
+)
+require_text(
+  curated_properties_generator,
+  "EFFECTIVE_DIMENSIONS",
+  "dbt curated properties generator",
+  errors
+)
+
+curated_publication_test = read_file(
+  "analytics/dbt/tests/curated_dimension_publication_scope.sql",
+  errors
+)
+CURATED_DIMENSION_MODELS.each do |model|
+  require_text(curated_publication_test, "'#{model}'", "dbt curated publication scope", errors)
+end
+curated_reconciliation_test = read_file(
+  "analytics/dbt/tests/curated_dimension_reconciliation.sql",
+  errors
+)
+(CURATED_DIMENSION_MODELS - ["dim_date"]).each do |model|
+  require_text(curated_reconciliation_test, "'#{model}'", "dbt curated reconciliation", errors)
+end
+curated_history_test = read_file(
+  "analytics/dbt/tests/curated_dimension_history_integrity.sql",
+  errors
+)
+(CURATED_DIMENSION_MODELS - %w[dim_date dim_patient]).each do |model|
+  require_text(curated_history_test, "'#{model}'", "dbt curated history integrity", errors)
+end
+require_text(
+  curated_history_test,
+  "overlapping_history_versions",
+  "dbt curated history integrity",
+  errors
+)
+require_text(
+  read_file("analytics/dbt/tests/curated_plan_payer_effective_relationship.sql", errors),
+  "payer.payer_dimension_id is null",
+  "dbt effective plan-to-payer relationship",
+  errors
+)
+curated_date_test = read_file("analytics/dbt/tests/curated_date_coverage.sql", errors)
+require_text(curated_date_test, "claimsflow_candidate_dates", "dbt date coverage", errors)
+require_text(curated_date_test, "except distinct", "dbt date coverage", errors)
+curated_date_span_test = read_file("analytics/dbt/tests/curated_date_span_bound.sql", errors)
+require_text(curated_date_span_test, "date_spine_days", "dbt bounded date spine", errors)
+require_text(
+  curated_date_span_test,
+  "config(tags=['curated_dimensions', 'phase4b1'])",
+  "dbt curated date-span selector",
+  errors
+)
+require_text(
+  curated_date_span_test,
+  "claimsflow_max_date_spine_days",
+  "dbt bounded date spine",
+  errors
+)
+
 dbt_schema_macro = read_file("analytics/dbt/macros/generate_schema_name.sql", errors)
 {
   "'staging': 'claimsflow_curated'" => "private staging physical dataset",
@@ -461,6 +631,8 @@ dbt_schema_macro = read_file("analytics/dbt/macros/generate_schema_name.sql", er
   "'curated': 'claimsflow_curated'" => "curated physical dataset",
   "'semantic': 'claimsflow_semantic'" => "semantic physical dataset",
   "'operational': 'claimsflow_operational'" => "operational physical dataset",
+  "'audit': 'claimsflow_audit'" => "audit physical dataset",
+  "'dbt_test__audit': 'claimsflow_audit'" => "dbt test audit physical dataset",
   "exceptions.raise_compiler_error" => "fail-closed unapproved-schema policy"
 }.each do |text, label|
   errors << "dbt dev/demo schema mapping must declare #{label}" unless dbt_schema_macro.include?(text)
@@ -701,6 +873,7 @@ CI_PATHS.each { |path| require_text(workflow, %(      - "#{path}"), "foundation 
   "mypy" => "Python type check",
   "pytest" => "Python unit tests",
   "python scripts/render_dbt_staging_properties.py --check" => "generated dbt staging properties",
+  "python scripts/render_dbt_curated_dimension_properties.py --check" => "generated dbt curated dimension properties",
   "dbt parse" => "dbt parse",
   "docker compose config --quiet" => "Compose validation",
   "docker compose build airflow" => "Airflow image build",
@@ -729,6 +902,7 @@ end
 require_text(development_docs, "terraform apply", "development guide", errors)
 require_text(development_docs, "claimsflow validate", "development guide", errors)
 require_text(development_docs, "dbt validated staging", "development guide", errors)
+require_text(development_docs, "dbt curated dimensions", "development guide", errors)
 
 dbt_staging_docs = read_file("docs/development/dbt-validated-staging.md", errors)
 {
@@ -741,6 +915,20 @@ dbt_staging_docs = read_file("docs/development/dbt-validated-staging.md", errors
   "Phase 4B" => "next milestone boundary"
 }.each do |text, label|
   errors << "dbt validated-staging guide must declare #{label}" unless dbt_staging_docs.include?(text)
+end
+
+dbt_curated_docs = read_file("docs/development/dbt-curated-dimensions.md", errors)
+{
+  "Phase 4B.1" => "curated-dimension milestone",
+  "nine conformed dimensions" => "complete dimension inventory",
+  "effective-dated" => "history-preserving dimensions",
+  "publication" => "candidate isolation",
+  "dim_plan" => "plan-to-payer conformance",
+  "dim_date" => "continuous calendar coverage",
+  "--target dev_demo" => "configured dev/demo target",
+  "Phase 4B.2" => "next milestone boundary"
+}.each do |text, label|
+  errors << "dbt curated-dimension guide must declare #{label}" unless dbt_curated_docs.include?(text)
 end
 
 quality_docs = read_file("docs/development/data-quality-quarantine.md", errors)

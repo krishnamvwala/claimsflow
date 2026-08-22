@@ -5,7 +5,9 @@
       'intermediate': 'claimsflow_curated',
       'curated': 'claimsflow_curated',
       'semantic': 'claimsflow_semantic',
-      'operational': 'claimsflow_operational'
+      'operational': 'claimsflow_operational',
+      'audit': 'claimsflow_audit',
+      'dbt_test__audit': 'claimsflow_audit'
     } -%}
     {%- if custom_schema_name not in physical_schemas -%}
       {{ exceptions.raise_compiler_error(

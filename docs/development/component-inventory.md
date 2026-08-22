@@ -12,7 +12,7 @@ parseable but does not yet perform the future business operation.
 | Python local adapter | `src/claimsflow/adapters/local_registry.py` | Python 3.12 SQLite | Phase 2 slice implemented | Idempotency, serialized delivery decisions, durable publication intents, lineage hashes, dispositions, replay integrity, and immutable-version collision evidence | Replay tamper, concurrency, crash recovery, collision retention, reconciliation, and failure-path tests |
 | Python cloud adapters | `src/claimsflow/adapters/gcs_landing.py`; `src/claimsflow/adapters/bigquery_raw.py` | BigQuery 3.43.0; Storage 3.1.1 | Phase 2 adapters implemented; live dev/demo exercise deferred | Create-only generation-pinned landing, cloud SHA-256 re-verification, deterministic append-only raw/audit jobs; no dbt-owned business logic | Fake client, collision/replay, tamper, generation, ordering, and reconciliation tests |
 | Python quality engine | `src/claimsflow/quality`; `config/data-quality-policy.yml` | Python 3.12; policy 1.0.0 | Phase 3 local slice implemented | Exact policy/contract/implementation binding, all 83 governed source rules across 131 source-identity/rule pairs with explicit not-applicable evidence, hourly freshness windows, final dispositions, immutable corrections, canonical normalized-payload, per-record, and complete validated-record-set SHA-256 evidence, deterministic replay reconstruction, durable report receipts, batch controls, and fail-closed publication gate; no metric or priority logic | Relationship, reversal, freshness, tamper, replay, correction, configuration, payload/record-set evidence, symlink, reconciliation, and gate tests |
-| dbt Core project | `analytics/dbt` | dbt Core 1.12.2; dbt-bigquery 1.12.0 | Phase 4A validated staging implemented | Fourteen project-protected typed models read only approved Phase 3 validation IDs; candidate aliases bind publication IDs to exact validation-selection fingerprints; staged rows must reproduce the canonical payload consumed by typed fields plus the immutable Phase 3 record and complete record-set hashes; generated contracts retain source/quality lineage; no curated, metric, or priority logic | Offline `dbt parse`, contract/source drift tests, model tests, typed-detail, count, and cryptographic payload/record-set reconciliation, candidate-scope policy |
+| dbt Core project | `analytics/dbt` | dbt Core 1.12.2; dbt-bigquery 1.12.0 | Phase 4A validated staging and Phase 4B.1 curated dimensions implemented | Fourteen project-protected typed models read only approved Phase 3 validation IDs; nine protected curated dimensions preserve candidate isolation, deterministic keys, effective-dated reference history, privacy-minimized patient conformance, and a continuous calendar; no facts, metrics, or priority logic | Offline `dbt parse`, generated contract/source drift tests, typed-detail, count, cryptographic payload/record-set reconciliation, dimension source reconciliation, history overlap, parent relationship, date coverage, and candidate-scope policy |
 | Apache Airflow | `orchestration/airflow` | Airflow 3.3.1/Python 3.12 image pinned by digest | Scaffolded with inert DAG | Dependencies, bounded retry/replay, and publication order only | Static policy plus runtime `DagBag` validation |
 | Local containers | `compose.yaml` | Docker Compose | Scaffolded | Reproducible Airflow runtime; no credentials | `docker compose config`, image build |
 | Terraform module | `infra/terraform/modules/foundation` | Terraform 1.15.8; Google 7.44.0 | Scaffolded, not applied | Landing, datasets, identities/IAM, WIF, retention, and budget | Format, init without backend, validate |
@@ -35,10 +35,11 @@ Terraform's built-in provider and therefore has no external-provider lock entry.
 
 ## Next milestone
 
-Phase 4A now has publication-and-selection-isolated dbt validated staging for all fourteen
-source identities, generated model contracts, complete lineage, and fail-closed
-scope/detail/count/record-set reconciliation.
-The next feature slice is Phase 4B: curated dimensional facts, dimensions, history behavior,
-and candidate membership deltas. A live isolated synthetic GCP exercise remains a separate
+Phase 4B.1 now has nine publication-and-selection-isolated conformed dimensions, generated
+model contracts, deterministic keys, effective-dated history, and fail-closed scope,
+reconciliation, relationship, overlap, and date-coverage gates.
+The next feature slice is Phase 4B.2: curated claim, claim-line, payment, denial, and appeal
+facts with effective dimension relationships and financial reconciliation. Candidate
+membership deltas follow in Phase 4B.3. A live isolated synthetic GCP exercise remains a separate
 explicitly approved integration gate; governed metrics, priority logic, dashboards, and
 automated deployment remain later slices.
