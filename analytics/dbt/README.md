@@ -21,12 +21,18 @@ reference dimensions preserve effective-dated history with deterministic version
 keys, `dim_plan` resolves the effective payer version, `dim_patient` is a privacy-minimized
 eligibility rollup, and `dim_date` is a continuous candidate calendar. Generated enforced
 contracts and singular tests cover candidate scope, source reconciliation, history overlap,
-plan-to-payer relationships, and date coverage. Curated facts, membership deltas, active-
+plan-to-payer relationships, and date coverage.
+
+Phase 4B.2 adds five publication-isolated curated facts for claims, claim lines, payments,
+denials, and appeals. They preserve exact source grains and lineage, resolve parent facts and
+effective dimension versions, map every calendar role, and enforce ordered line-diagnosis
+conformance. Exact source totals, claim-line rollups, payment signs, denial exposure, appeal
+recovery, relationship, and candidate-scope gates fail closed. Membership deltas, active-
 manifest advancement, semantic metrics, and priority logic remain later milestones.
 
 The intended model flow is:
 
-`staging -> intermediate -> curated -> semantic / operational`
+`staging -> intermediate -> curated dimensions / facts -> semantic / operational`
 
 In dev/demo, `generate_schema_name` maps staging and intermediate work into the governed
 `claimsflow_curated` dataset and maps consumer models to `claimsflow_semantic` and
@@ -38,3 +44,5 @@ parse project configuration without contacting Google Cloud. See the
 [validated-staging guide](../../docs/development/dbt-validated-staging.md) for the source
 interface and the [curated-dimension guide](../../docs/development/dbt-curated-dimensions.md)
 for the Phase 4B.1 model and test contract.
+See the [curated-fact guide](../../docs/development/dbt-curated-facts.md) for the Phase 4B.2
+fact, relationship, and financial-reconciliation contract.

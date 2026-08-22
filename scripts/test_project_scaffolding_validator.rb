@@ -33,10 +33,38 @@ def run_validator(root)
   Open3.capture3(RbConfig.ruby, File.join(root, "scripts", "validate_project_scaffolding.rb"))
 end
 
+def copy_entry(source, root, entry)
+  unless entry == "analytics"
+    FileUtils.cp_r(source, root)
+    return
+  end
+
+  dbt_source = File.join(source, "dbt")
+  dbt_destination = File.join(root, "analytics", "dbt")
+  FileUtils.mkdir_p(dbt_destination)
+  Dir.children(dbt_source).each do |child|
+    next if %w[dbt_packages logs target].include?(child)
+
+    FileUtils.cp_r(File.join(dbt_source, child), dbt_destination)
+  end
+end
+
+def baseline_root
+  return @baseline_root if defined?(@baseline_root)
+
+  @baseline_root = Dir.mktmpdir("claimsflow-scaffold-baseline-")
+  COPY_ENTRIES.each do |entry|
+    source = File.join(SOURCE_ROOT, entry)
+    copy_entry(source, @baseline_root, entry) if File.exist?(source)
+  end
+  at_exit { FileUtils.remove_entry(@baseline_root) if File.exist?(@baseline_root) }
+  @baseline_root
+end
+
 def with_repository_copy
   Dir.mktmpdir("claimsflow-scaffold-validator-") do |root|
     COPY_ENTRIES.each do |entry|
-      source = File.join(SOURCE_ROOT, entry)
+      source = File.join(baseline_root, entry)
       FileUtils.cp_r(source, root) if File.exist?(source)
     end
     yield root
@@ -66,7 +94,7 @@ def assert_failure(label, expected)
   end
 end
 
-stdout, stderr, status = run_validator(SOURCE_ROOT)
+stdout, stderr, status = run_validator(baseline_root)
 unless status.success?
   warn "FAIL baseline scaffold validator:\n#{stdout}#{stderr}"
   exit 1
@@ -168,6 +196,10 @@ results << assert_failure("missing curated dimension", "dbt governed model inven
   FileUtils.rm(File.join(root, "analytics/dbt/models/curated/dimensions/dim_payer.sql"))
 end
 
+results << assert_failure("missing curated fact", "dbt governed model inventory must contain only") do |root|
+  FileUtils.rm(File.join(root, "analytics/dbt/models/curated/facts/fact_denial.sql"))
+end
+
 results << assert_failure("curated raw boundary bypass", "dbt dim_provider validated boundary must not contain") do |root|
   mutate(root, "analytics/dbt/models/curated/dimensions/dim_provider.sql") do |text|
     text + "\n-- source('claimsflow_raw', 'providers')\n"
@@ -180,6 +212,24 @@ results << assert_failure("curated contract drift", "documented publication-scop
   end
 end
 
+results << assert_failure("curated fact boundary bypass", "dbt fact_payment validated boundary must not contain") do |root|
+  mutate(root, "analytics/dbt/models/curated/facts/fact_payment.sql") do |text|
+    text + "\n-- source('claimsflow_raw', 'payments')\n"
+  end
+end
+
+results << assert_failure("curated fact contract drift", "Phase 4B.2 model properties") do |root|
+  mutate(root, "analytics/dbt/models/curated/facts/_facts.yml") do |text|
+    text.sub("partition_by: created_at month", "partition_by: 42")
+  end
+end
+
+results << assert_failure("curated fact selector drift", "dbt curated fact financial integrity selector") do |root|
+  mutate(root, "analytics/dbt/tests/curated_fact_financial_integrity.sql") do |text|
+    text.sub("{{ config(tags=['curated_facts', 'phase4b2']) }}\n\n", "")
+  end
+end
+
 results << assert_failure("curated date-span selector drift", "dbt curated date-span selector") do |root|
   mutate(root, "analytics/dbt/tests/curated_date_span_bound.sql") do |text|
     text.sub("{{ config(tags=['curated_dimensions', 'phase4b1']) }}\n\n", "")
@@ -189,6 +239,15 @@ end
 results << assert_failure("curated docs target drift", "configured dev/demo target") do |root|
   mutate(root, "docs/development/dbt-curated-dimensions.md") do |text|
     text.sub("--target dev_demo", "--target dev-demo")
+  end
+end
+
+results << assert_failure("curated fact docs selector drift", "complete release selector") do |root|
+  mutate(root, "docs/development/dbt-curated-facts.md") do |text|
+    text.sub(
+      "--select tag:validated_staging tag:curated_dimensions tag:curated_facts",
+      "--select tag:curated_facts"
+    )
   end
 end
 

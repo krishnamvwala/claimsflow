@@ -79,3 +79,4 @@ where quality.validation_id is null
   or quality.validated_record_set_sha256
     is distinct from record_set.computed_record_set_sha256
   or record_set.mismatched_record_evidence_count is distinct from 0
+{{ config(tags=['validated_staging', 'phase4a']) }}

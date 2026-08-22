@@ -20,6 +20,7 @@ on:
       - "scripts/test_project_scaffolding_validator.rb"
       - "scripts/render_dbt_staging_properties.py"
       - "scripts/render_dbt_curated_dimension_properties.py"
+      - "scripts/render_dbt_curated_fact_properties.py"
       - "src/**"
       - "tests/**"
       - "uv.lock"
@@ -45,6 +46,7 @@ on:
       - "scripts/test_project_scaffolding_validator.rb"
       - "scripts/render_dbt_staging_properties.py"
       - "scripts/render_dbt_curated_dimension_properties.py"
+      - "scripts/render_dbt_curated_fact_properties.py"
       - "src/**"
       - "tests/**"
       - "uv.lock"
@@ -85,6 +87,8 @@ jobs:
         run: uv run --locked python scripts/render_dbt_staging_properties.py --check
       - name: Verify generated dbt curated dimension properties
         run: uv run --locked python scripts/render_dbt_curated_dimension_properties.py --check
+      - name: Verify generated dbt curated fact properties
+        run: uv run --locked python scripts/render_dbt_curated_fact_properties.py --check
       - name: Parse dbt project
         run: uv run --locked --group dbt dbt parse --project-dir analytics/dbt --profiles-dir config/dbt --target ci --no-partial-parse
 

@@ -68,3 +68,4 @@ from missing_from_typed_models
 union all
 select 'unexpected_in_typed_models' as reconciliation_failure, *
 from unexpected_in_typed_models
+{{ config(tags=['validated_staging', 'phase4a']) }}

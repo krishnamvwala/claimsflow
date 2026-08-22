@@ -47,3 +47,4 @@ unexpected_dates as (
 select 'missing_date' as failure_type, * from missing_dates
 union all
 select 'unexpected_date' as failure_type, * from unexpected_dates
+{{ config(tags=['curated_dimensions', 'phase4b1']) }}

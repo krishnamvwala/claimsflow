@@ -1,14 +1,12 @@
-with dimension_rows as (
+{{ config(tags=['curated_facts', 'phase4b2']) }}
+
+with fact_rows as (
   {% set models = [
-    'dim_date',
-    'dim_denial_reason',
-    'dim_diagnosis',
-    'dim_facility',
-    'dim_patient',
-    'dim_payer',
-    'dim_plan',
-    'dim_procedure',
-    'dim_provider'
+    'fact_appeal',
+    'fact_claim',
+    'fact_claim_line',
+    'fact_denial',
+    'fact_payment'
   ] %}
   {% for model_name in models %}
   select
@@ -22,8 +20,7 @@ with dimension_rows as (
 )
 
 select *
-from dimension_rows
+from fact_rows
 where candidate_publication_id != '{{ claimsflow_publication_id() }}'
   or candidate_selection_fingerprint != '{{ claimsflow_publication_selection_fingerprint() }}'
   or synthetic_only is not true
-{{ config(tags=['curated_dimensions', 'phase4b1']) }}

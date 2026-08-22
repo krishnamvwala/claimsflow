@@ -28,3 +28,4 @@ from requested_validation_ids as requested
 left join audit_evidence as audit using (validation_id)
 where coalesce(audit.audit_row_count, 0) != 1
   or coalesce(audit.approved_row_count, 0) != 1
+{{ config(tags=['validated_staging', 'phase4a']) }}

@@ -76,7 +76,7 @@ Google Cloud. A real `dbt build` is a separate explicitly authorized synthetic d
 
 ## Deferred boundary
 
-Phase 4B.1 creates no claim, claim-line, payment, denial, or appeal facts; no financial metric
-logic; no priority score; and no active-publication pointer. Phase 4B.2 will add publication-
-isolated curated facts and fact-to-dimension effective-date relationships. Candidate
-membership deltas and active-manifest advancement remain the following slice.
+Phase 4B.1 itself creates no claim, claim-line, payment, denial, or appeal facts. Phase 4B.2
+now adds those publication-isolated curated facts and their fact-to-dimension effective-date
+relationships. Candidate membership deltas and active-manifest advancement remain Phase 4B.3;
+governed metrics and priority scoring remain later slices.

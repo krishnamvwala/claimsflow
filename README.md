@@ -4,7 +4,7 @@ Healthcare claims analytics, denial prevention, and revenue recovery platform bu
 
 ## Project status
 
-ClaimsFlow has completed the Phase 0 discovery/success-contract baseline, Phase 1 implementation foundation, Phase 2 ingestion boundary, Phase 3 quality gate, Phase 4A validated dbt staging, and the Phase 4B.1 conformed-dimension slice. Requirements, acceptance criteria, machine-readable source-data contracts, the governed metric dictionary, and seven accepted architecture decisions are documented and automatically validated.
+ClaimsFlow has completed the Phase 0 discovery/success-contract baseline, Phase 1 implementation foundation, Phase 2 ingestion boundary, Phase 3 quality gate, Phase 4A validated dbt staging, Phase 4B.1 conformed dimensions, and Phase 4B.2 curated facts. Requirements, acceptance criteria, machine-readable source-data contracts, the governed metric dictionary, and seven accepted architecture decisions are documented and automatically validated.
 
 Phase 1 adds pinned Python tooling, the typed package and CLI boundary, an empty parseable dbt project, an inert fail-closed Airflow DAG in Docker, guarded Terraform local and dev/demo roots, release-manifest configuration, component-aware CI, and offline policy tests. It creates no cloud resources and implements no claims business logic.
 
@@ -19,8 +19,14 @@ provider, facility, diagnosis, procedure, and denial-reason history is preserved
 deterministic version and business keys; plan versions resolve their covering payer version.
 The patient dimension is a privacy-minimized eligibility rollup, and the date dimension spans
 the complete candidate source-date range. Generated contracts plus reconciliation, history,
-relationship, date-coverage, and publication-scope tests fail closed. Curated facts, membership
-deltas, governed metrics, priority logic, dashboards, and live cloud execution remain deferred.
+relationship, date-coverage, and publication-scope tests fail closed.
+
+Phase 4B.2 adds publication-isolated claim, claim-line, payment, denial, and appeal facts at
+their governed source grains. Deterministic keys bind parent facts, ordered line diagnoses,
+effective-dated dimensions, and calendar roles. Exact row and amount reconciliation,
+claim-to-line rollups, payment signs, exposure/recovery controls, relationship checks, and
+candidate-scope tests block an invalid fact candidate. Membership deltas, governed metrics,
+priority logic, dashboards, and live cloud execution remain deferred.
 
 ## Quick start
 
@@ -75,3 +81,4 @@ commands, boundaries, and troubleshooting.
 - [Data-quality and quarantine guide](docs/development/data-quality-quarantine.md)
 - [dbt validated-staging guide](docs/development/dbt-validated-staging.md)
 - [dbt curated-dimension guide](docs/development/dbt-curated-dimensions.md)
+- [dbt curated-fact guide](docs/development/dbt-curated-facts.md)

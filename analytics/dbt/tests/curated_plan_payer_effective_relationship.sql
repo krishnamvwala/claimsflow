@@ -16,3 +16,4 @@ left join {{ ref('dim_payer') }} as payer
   and coalesce(plan.valid_to, date '9999-12-31')
     <= coalesce(payer.valid_to, date '9999-12-31')
 where payer.payer_dimension_id is null
+{{ config(tags=['curated_dimensions', 'phase4b1']) }}

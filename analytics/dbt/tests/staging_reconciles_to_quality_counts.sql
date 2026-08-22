@@ -29,3 +29,4 @@ full outer join staged_counts as staged
 where quality.validation_id is null
   or staged.validation_id is null
   or quality.expected_validated_rows != staged.actual_validated_rows
+{{ config(tags=['validated_staging', 'phase4a']) }}
